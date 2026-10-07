@@ -8,6 +8,13 @@ export function generateToken(): string {
 }
 
 /**
+ * Generate a random hook token.
+ */
+export function generateHookToken(): string {
+  return randomBytes(32).toString("hex");
+}
+
+/**
  * Verify the Origin header of an incoming request.
  * Allows requests with no Origin (e.g. direct browser navigation),
  * but strictly checks provided Origins against the expected host.
@@ -28,4 +35,12 @@ export function isValidToken(url: string | undefined, expectedToken: string): bo
   } catch {
     return false;
   }
+}
+
+/**
+ * Verify a hook token.
+ */
+export function isValidHookToken(token: string | undefined, expectedToken: string): boolean {
+  if (!token) return false;
+  return token === expectedToken;
 }

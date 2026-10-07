@@ -31,7 +31,9 @@ function processTranscriptLine(session: Session, line: any): Session {
     if (Array.isArray(content)) {
       const toolUse = content.find((c: any) => c.type === "tool_use");
       if (toolUse) {
-        next.state = "working";
+        if (!next.hookWaiting) {
+          next.state = "working";
+        }
         next.currentTool = toolUse.name;
         next.toolStartedAt = timestamp;
         newFeedEvent = {
@@ -41,7 +43,9 @@ function processTranscriptLine(session: Session, line: any): Session {
           excerpt: `Used tool: ${toolUse.name}`,
         };
       } else {
-        next.state = "idle";
+        if (!next.hookWaiting) {
+          next.state = "idle";
+        }
         next.currentTool = undefined;
         next.toolStartedAt = undefined;
         const textBlock = content.find((c: any) => c.type === "text");
@@ -56,6 +60,7 @@ function processTranscriptLine(session: Session, line: any): Session {
       }
     }
   } else if (line.type === "user") {
+    next.hookWaiting = false; // User activity clears the hook waiting state
     if (Array.isArray(content)) {
       const toolResult = content.find((c: any) => c.type === "tool_result");
       if (toolResult) {
@@ -327,6 +332,47 @@ export function reduce(office: Office, event: DomainEvent): Office {
             }
           };
         }
+      }
+      break;
+    }
+
+    case "hook_event": {
+      // Find session by PID or fallback to matching sessionId from hookData
+      let session = office.sessions[event.pid];
+      let matchingPid = event.pid;
+      
+      if (!session && event.hookData?.sessionId) {
+        for (const pidStr of Object.keys(office.sessions)) {
+          const s = office.sessions[Number(pidStr)];
+          if (s && s.sessionId === event.hookData.sessionId) {
+            session = s;
+            matchingPid = Number(pidStr);
+            break;
+          }
+        }
+      }
+
+      if (session) {
+        const hType = event.hookData.type;
+        const nextSession = { ...session };
+        
+        if (hType === "PermissionRequest" || hType === "Notification") {
+          nextSession.hookWaiting = true;
+          nextSession.state = "waiting_on_user";
+        } else if (hType === "PreToolUse" || hType === "PostToolUse" || hType === "PostToolUseFailure") {
+          nextSession.hookWaiting = false;
+          if (hType === "PreToolUse") {
+            nextSession.state = "working";
+          }
+        }
+        
+        next = {
+          ...office,
+          sessions: {
+            ...office.sessions,
+            [matchingPid]: nextSession,
+          }
+        };
       }
       break;
     }

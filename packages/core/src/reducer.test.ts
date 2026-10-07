@@ -449,6 +449,82 @@ describe("reducer", () => {
     });
   });
 
+  describe("hook events", () => {
+    it("Notification gives exact waiting_on_user overriding passive inference", () => {
+      let office = emptyOffice();
+      office = reduce(office, appeared());
+
+      office = reduce(office, {
+        type: "hook_event",
+        pid: 1001,
+        hookData: { type: "Notification" }
+      });
+
+      expect(office.sessions[1001]!.state).toBe("waiting_on_user");
+      expect(office.sessions[1001]!.hookWaiting).toBe(true);
+      expect(office.waitingCount).toBe(1);
+    });
+
+    it("Hook-before-transcript ordering correctly preserves waiting state", () => {
+      let office = emptyOffice();
+      office = reduce(office, appeared());
+
+      // Hook arrives first
+      office = reduce(office, {
+        type: "hook_event",
+        pid: 1001,
+        hookData: { type: "PermissionRequest" }
+      });
+      expect(office.sessions[1001]!.state).toBe("waiting_on_user");
+
+      // Then transcript line arrives (normally would set state to "working")
+      office = reduce(office, {
+        type: "transcript_line",
+        pid: 1001,
+        line: {
+          timestamp: new Date(1000).toISOString(),
+          type: "assistant",
+          message: {
+            content: [
+              { type: "tool_use", name: "Bash", id: "tool_1" }
+            ]
+          }
+        }
+      });
+      
+      // State should remain waiting_on_user
+      expect(office.sessions[1001]!.state).toBe("waiting_on_user");
+      expect(office.sessions[1001]!.hookWaiting).toBe(true);
+    });
+
+    it("User transcript line clears hook waiting state", () => {
+      let office = emptyOffice();
+      office = reduce(office, appeared());
+
+      office = reduce(office, {
+        type: "hook_event",
+        pid: 1001,
+        hookData: { type: "PermissionRequest" }
+      });
+      
+      office = reduce(office, {
+        type: "transcript_line",
+        pid: 1001,
+        line: {
+          type: "user",
+          message: {
+            content: [
+              { type: "tool_result", tool_use_id: "tool_1", is_error: false, content: "Done" }
+            ]
+          }
+        }
+      });
+
+      expect(office.sessions[1001]!.state).toBe("thinking");
+      expect(office.sessions[1001]!.hookWaiting).toBe(false);
+    });
+  });
+
   describe("unknown event types", () => {
     it("are silently skipped", () => {
       const office = officeWith(appeared());

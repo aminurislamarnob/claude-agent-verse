@@ -56,6 +56,8 @@ export interface Session {
   feed: FeedEvent[];
   /** Subagents spawned by this session */
   subagents: Record<string, Subagent>;
+  /** Explicit hook waiting state to override transcript inference */
+  hookWaiting?: boolean;
 }
 
 /**
@@ -123,6 +125,15 @@ export interface Tick {
   now: number;
 }
 
+export interface HookEvent {
+  type: "hook_event";
+  pid: number;
+  hookData: {
+    type: string;
+    [key: string]: any;
+  };
+}
+
 export type DomainEvent =
   | SessionAppeared
   | SessionEnded
@@ -130,4 +141,5 @@ export type DomainEvent =
   | SubagentAppeared
   | SubagentEnded
   | SubagentTranscriptLine
-  | Tick;
+  | Tick
+  | HookEvent;
