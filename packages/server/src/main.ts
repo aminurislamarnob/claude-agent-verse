@@ -1,15 +1,5 @@
-/**
- * Server main entry point.
- *
- * - Polls the session registry every ~1s
- * - Runs domain events through the core reducer
- * - Pushes the Office snapshot to connected browsers via WebSocket
- * - Serves the web frontend's static files
- * - Binds to 127.0.0.1 only
- */
-
 import { createServer } from "node:http";
-import { readFile, readdir } from "node:fs/promises";
+import { readFile, readdir, writeFile, unlink } from "node:fs/promises";
 import { join, extname } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -18,7 +8,7 @@ import { reduce, emptyOffice } from "@claude-agent-verse/core";
 import type { Office, DomainEvent } from "@claude-agent-verse/core";
 import { scan, emptyScanSnapshot, claudeHome } from "./scanner.js";
 import type { ScanSnapshot } from "./scanner.js";
-import { generateToken, isAllowedOrigin, isValidToken } from "./auth.js";
+import { generateToken, generateHookToken, isAllowedOrigin, isValidToken, isValidHookToken } from "./auth.js";
 import { FileTailer } from "./tailer.js";
 
 const HOST = "127.0.0.1";
@@ -26,6 +16,7 @@ const PORT = parseInt(process.env.PORT ?? "4800", 10);
 const POLL_INTERVAL_MS = 1000;
 
 const browserToken = generateToken();
+const hookToken = generateHookToken();
 
 // Resolve the web package's dist directory for serving static files.
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
@@ -55,6 +46,7 @@ const MIME: Record<string, string> = {
 
 const server = createServer(async (req, res) => {
   // Origin check — only allow requests from the same origin.
+  // Exception: hook requests via CLI might not have an Origin, which is fine since isAllowedOrigin returns true if !origin.
   if (!isAllowedOrigin(req.headers.origin, `${HOST}:${PORT}`)) {
     res.writeHead(403);
     res.end("Forbidden");
@@ -62,9 +54,36 @@ const server = createServer(async (req, res) => {
   }
 
   // API endpoint: GET /api/office — returns current Office as JSON.
-  if (req.url === "/api/office") {
+  if (req.url === "/api/office" && req.method === "GET") {
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify(office));
+    return;
+  }
+
+  // API endpoint: POST /api/hooks — processes incoming domain events from hooks.
+  if (req.url === "/api/hooks" && req.method === "POST") {
+    const authHeader = req.headers.authorization;
+    const providedToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : undefined;
+    
+    if (!isValidHookToken(providedToken, hookToken)) {
+      res.writeHead(401);
+      res.end("Unauthorized");
+      return;
+    }
+
+    let body = "";
+    req.on("data", chunk => { body += chunk.toString(); });
+    req.on("end", () => {
+      try {
+        const event = JSON.parse(body) as DomainEvent;
+        dispatch(event);
+        res.writeHead(200);
+        res.end("OK");
+      } catch (err) {
+        res.writeHead(400);
+        res.end("Bad Request");
+      }
+    });
     return;
   }
 
@@ -264,7 +283,37 @@ async function poll(): Promise<void> {
 
 // ── Start ────────────────────────────────────────────────────
 
-server.listen(PORT, HOST, () => {
+async function writeDiscoveryFile() {
+  const discoveryPath = join(claudeHome(), "agent-verse-discovery.json");
+  const data = JSON.stringify({ port: PORT, pid: process.pid, hookToken }, null, 2);
+  await writeFile(discoveryPath, data, { mode: 0o600 });
+  return discoveryPath;
+}
+
+async function cleanupDiscoveryFile(discoveryPath: string) {
+  try {
+    await unlink(discoveryPath);
+  } catch (err: any) {
+    if (err.code !== "ENOENT") {
+      console.error("Failed to delete discovery file:", err);
+    }
+  }
+}
+
+server.listen(PORT, HOST, async () => {
+  const discoveryPath = await writeDiscoveryFile();
+
+  const shutdown = async () => {
+    await cleanupDiscoveryFile(discoveryPath);
+    process.exit(0);
+  };
+
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
+  process.on("exit", () => {
+    try { import("node:fs").then(fs => fs.unlinkSync(discoveryPath)) } catch {}
+  });
+
   console.log(`\n  🏢 Claude Agent Verse`);
   console.log(`  ─────────────────────`);
   console.log(`  Debug list: http://${HOST}:${PORT}?token=${browserToken}`);
