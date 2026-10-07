@@ -4,7 +4,7 @@
 /**
  * Agent State — the visible state of a session character.
  */
-export type AgentState = "working" | "thinking" | "idle" | "error" | "ended";
+export type AgentState = "working" | "thinking" | "idle" | "error" | "ended" | "waiting_on_user";
 
 export interface FeedEvent {
   id: string;
@@ -50,6 +50,8 @@ export interface Session {
   gitBranch?: string;
   /** Name of the tool currently being used (when state is 'working') */
   currentTool?: string;
+  /** Epoch ms when the current tool started */
+  toolStartedAt?: number;
   /** Short recent-event feed (max 20 entries) */
   feed: FeedEvent[];
   /** Subagents spawned by this session */
@@ -63,6 +65,10 @@ export interface Session {
 export interface Office {
   /** Live sessions keyed by PID. */
   sessions: Record<number, Session>;
+  /** Number of sessions in waiting_on_user state. */
+  waitingCount: number;
+  /** Configurable threshold for waiting inference. */
+  waitingThresholdMs: number;
 }
 
 // ── Domain events ─────────────────────────────────────────────
@@ -112,10 +118,16 @@ export interface SubagentTranscriptLine {
   line: any;
 }
 
+export interface Tick {
+  type: "tick";
+  now: number;
+}
+
 export type DomainEvent =
   | SessionAppeared
   | SessionEnded
   | TranscriptLine
   | SubagentAppeared
   | SubagentEnded
-  | SubagentTranscriptLine;
+  | SubagentTranscriptLine
+  | Tick;

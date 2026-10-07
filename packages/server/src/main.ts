@@ -137,9 +137,17 @@ function broadcast(data: object): void {
   }
 }
 
+let latestEventTime = Date.now();
+
 // ── Event dispatch ───────────────────────────────────────────
 
 function dispatch(event: DomainEvent): void {
+  if (event.type === "transcript_line" || event.type === "subagent_transcript_line") {
+    if (event.line.timestamp) {
+      latestEventTime = Math.max(latestEventTime, new Date(event.line.timestamp).getTime());
+    }
+  }
+
   office = reduce(office, event);
 
   if (event.type === "session_appeared") {
@@ -192,6 +200,9 @@ async function poll(): Promise<void> {
     scanSnapshot = result.snapshot;
 
     for (const event of result.events) {
+      if (event.type === "session_appeared") {
+        latestEventTime = Math.max(latestEventTime, event.startedAt);
+      }
       dispatch(event);
     }
 
@@ -243,6 +254,9 @@ async function poll(): Promise<void> {
         // subagents dir doesn't exist yet, ignore
       }
     }
+
+    const now = process.env.CLAUDE_REPLAY_MODE ? latestEventTime : Date.now();
+    dispatch({ type: "tick", now });
   } catch (err) {
     console.error("[poll] Error scanning sessions:", err);
   }

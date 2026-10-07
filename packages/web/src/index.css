@@ -138,6 +138,18 @@ header h1 {
   color: var(--red);
 }
 
+.state-waiting_on_user {
+  color: #ef4444;
+  font-weight: bold;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.5; }
+  100% { opacity: 1; }
+}
+
 .state-icon {
   font-size: 1rem;
 }
