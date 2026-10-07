@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, useCallback, Fragment } from "react";
+import { OfficeScene } from "./OfficeScene";
 
 // ── Types (subset of @claude-agent-verse/core) ───────────────
 
-type AgentState = "working" | "thinking" | "idle" | "error" | "ended" | "waiting_on_user";
+export type AgentState = "working" | "thinking" | "idle" | "error" | "ended" | "waiting_on_user";
 
-interface Subagent {
+export interface Subagent {
   subagentId: string;
   agentType: string;
   description: string;
@@ -13,7 +14,7 @@ interface Subagent {
   currentTool?: string;
 }
 
-interface Session {
+export interface Session {
   pid: number;
   sessionId: string;
   cwd: string;
@@ -28,7 +29,7 @@ interface Session {
   subagents?: Record<string, Subagent>;
 }
 
-interface Office {
+export interface Office {
   sessions: Record<number, Session>;
   waitingCount: number;
 }
@@ -39,7 +40,7 @@ function useOffice(): { office: Office; connected: boolean } {
   const [office, setOffice] = useState<Office>({ sessions: {}, waitingCount: 0 });
   const [connected, setConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimer = useRef<ReturnType<typeof setTimeout>>();
+  const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const connect = useCallback(() => {
     // Determine WebSocket URL based on current location.
@@ -80,7 +81,7 @@ function useOffice(): { office: Office; connected: boolean } {
   useEffect(() => {
     connect();
     return () => {
-      clearTimeout(reconnectTimer.current);
+      if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
       wsRef.current?.close();
     };
   }, [connect]);
@@ -222,52 +223,60 @@ export function App() {
   useFaviconBadge(office.waitingCount);
 
   return (
-    <div className="app">
-      <header>
-        <h1>🏢 Claude Agent Verse</h1>
-        <span className={`connection ${connected ? "connected" : "disconnected"}`}>
-          {connected ? "● Connected" : "○ Disconnected"}
-        </span>
-      </header>
+    <div className="app-container">
+      <div className="diorama-view">
+        <OfficeScene office={office} />
+      </div>
+      
+      <div className="debug-sidebar">
+        <div className="app">
+          <header>
+            <h1>🏢 Claude Agent Verse</h1>
+            <span className={`connection ${connected ? "connected" : "disconnected"}`}>
+              {connected ? "● Connected" : "○ Disconnected"}
+            </span>
+          </header>
 
-      {sessions.length === 0 ? (
-        <div className="empty">
-          <p>No live Claude Code sessions found.</p>
-          <p className="hint">
-            Start a Claude Code session and it will appear here within ~1 second.
-          </p>
-        </div>
-      ) : (
-        <div className="projects">
-          {projectKeys.map((projectKey) => {
-            const projectSessions = byProject[projectKey].sort((a, b) => a.name.localeCompare(b.name));
-            return (
-              <div key={projectKey} className="project-group" style={{ marginBottom: "2rem" }}>
-                <h2>Project: {projectKey}</h2>
-                <table className="sessions-table" style={{ width: "100%", textAlign: "left", borderCollapse: "collapse" }}>
-                  <thead>
-                    <tr style={{ borderBottom: "1px solid #ddd" }}>
-                      <th>Session / Subagent</th>
-                      <th>Directory / Branch</th>
-                      <th>State</th>
-                      <th>ID</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {projectSessions.map((s) => (
-                      <SessionRow key={s.pid} session={s} />
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            );
-          })}
-        </div>
-      )}
+          {sessions.length === 0 ? (
+            <div className="empty">
+              <p>No live Claude Code sessions found.</p>
+              <p className="hint">
+                Start a Claude Code session and it will appear here within ~1 second.
+              </p>
+            </div>
+          ) : (
+            <div className="projects">
+              {projectKeys.map((projectKey) => {
+                const projectSessions = byProject[projectKey].sort((a, b) => a.name.localeCompare(b.name));
+                return (
+                  <div key={projectKey} className="project-group" style={{ marginBottom: "2rem" }}>
+                    <h2>Project: {projectKey}</h2>
+                    <table className="sessions-table" style={{ width: "100%", textAlign: "left", borderCollapse: "collapse" }}>
+                      <thead>
+                        <tr style={{ borderBottom: "1px solid #ddd" }}>
+                          <th>Session / Subagent</th>
+                          <th>Directory / Branch</th>
+                          <th>State</th>
+                          <th>ID</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {projectSessions.map((s) => (
+                          <SessionRow key={s.pid} session={s} />
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
-      <footer>
-        <span>{sessions.length} session{sessions.length === 1 ? "" : "s"}</span>
-      </footer>
+          <footer>
+            <span>{sessions.length} session{sessions.length === 1 ? "" : "s"}</span>
+          </footer>
+        </div>
+      </div>
     </div>
   );
 }

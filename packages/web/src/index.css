@@ -24,10 +24,31 @@ body {
   line-height: 1.5;
 }
 
+.app-container {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+}
+
+.diorama-view {
+  flex: 1;
+  background: var(--surface);
+  position: relative;
+}
+
+.debug-sidebar {
+  width: 500px;
+  background: var(--bg);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+}
+
 .app {
-  max-width: 1200px;
-  margin: 0 auto;
   padding: 24px;
+  flex: 1;
+  overflow-y: auto;
 }
 
 header {
