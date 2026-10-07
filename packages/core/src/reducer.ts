@@ -1,4 +1,4 @@
-import type { Office, DomainEvent, Session, FeedEvent } from "./types.js";
+import type { Office, DomainEvent, Session, FeedEvent, Subagent, AgentState } from "./types.js";
 
 function truncate(str: string, len: number): string {
   if (!str) return "";
@@ -107,6 +107,44 @@ function processTranscriptLine(session: Session, line: any): Session {
   return next;
 }
 
+function processSubagentTranscriptLine(subagent: Subagent, line: any): Subagent {
+  const next = { ...subagent };
+  const content = line.message?.content;
+
+  if (line.type === "assistant") {
+    if (Array.isArray(content)) {
+      const toolUse = content.find((c: any) => c.type === "tool_use");
+      if (toolUse) {
+        next.state = "working";
+        next.currentTool = toolUse.name;
+      } else {
+        next.state = "idle";
+        next.currentTool = undefined;
+      }
+    }
+  } else if (line.type === "user") {
+    if (Array.isArray(content)) {
+      const toolResult = content.find((c: any) => c.type === "tool_result");
+      if (toolResult) {
+        if (toolResult.is_error) {
+          next.state = "error";
+          next.currentTool = undefined;
+        } else {
+          next.state = "thinking";
+          next.currentTool = undefined;
+        }
+      } else {
+        next.state = "thinking";
+        next.currentTool = undefined;
+      }
+    } else if (typeof content === "string") {
+      next.state = "thinking";
+      next.currentTool = undefined;
+    }
+  }
+  return next;
+}
+
 export function reduce(office: Office, event: DomainEvent): Office {
   switch (event.type) {
     case "session_appeared": {
@@ -128,6 +166,7 @@ export function reduce(office: Office, event: DomainEvent): Office {
             projectKey: event.projectKey,
             startedAt: event.startedAt,
             feed: [],
+            subagents: {},
           },
         },
       };
@@ -147,6 +186,72 @@ export function reduce(office: Office, event: DomainEvent): Office {
           ...office.sessions,
           [event.pid]: processTranscriptLine(session, event.line),
         },
+      };
+    }
+
+    case "subagent_appeared": {
+      const session = office.sessions[event.pid];
+      if (!session) return office;
+      
+      const newSubagent: Subagent = {
+        subagentId: event.subagentId,
+        agentType: event.agentType,
+        description: event.description,
+        toolUseId: event.toolUseId,
+        state: "idle",
+      };
+
+      return {
+        ...office,
+        sessions: {
+          ...office.sessions,
+          [event.pid]: {
+            ...session,
+            subagents: {
+              ...session.subagents,
+              [event.subagentId]: newSubagent,
+            }
+          }
+        }
+      };
+    }
+
+    case "subagent_ended": {
+      const session = office.sessions[event.pid];
+      if (!session) return office;
+
+      const { [event.subagentId]: _removed, ...restSubagents } = session.subagents;
+
+      return {
+        ...office,
+        sessions: {
+          ...office.sessions,
+          [event.pid]: {
+            ...session,
+            subagents: restSubagents,
+          }
+        }
+      };
+    }
+
+    case "subagent_transcript_line": {
+      const session = office.sessions[event.pid];
+      if (!session) return office;
+      const subagent = session.subagents[event.subagentId];
+      if (!subagent) return office;
+
+      return {
+        ...office,
+        sessions: {
+          ...office.sessions,
+          [event.pid]: {
+            ...session,
+            subagents: {
+              ...session.subagents,
+              [event.subagentId]: processSubagentTranscriptLine(subagent, event.line),
+            }
+          }
+        }
       };
     }
 

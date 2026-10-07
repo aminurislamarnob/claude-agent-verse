@@ -6,6 +6,10 @@ export type {
   SessionAppeared,
   TranscriptLine,
   SessionEnded,
+  Subagent,
+  SubagentAppeared,
+  SubagentEnded,
+  SubagentTranscriptLine,
 } from "./types.js";
 
 export { reduce, emptyOffice } from "./reducer.js";

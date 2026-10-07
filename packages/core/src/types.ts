@@ -13,6 +13,15 @@ export interface FeedEvent {
   excerpt: string;
 }
 
+export interface Subagent {
+  subagentId: string;
+  agentType: string;
+  description: string;
+  toolUseId: string;
+  state: AgentState;
+  currentTool?: string;
+}
+
 /**
  * Session — one running Claude Code process.
  * Maps to a character at a desk in the 3D office.
@@ -43,6 +52,8 @@ export interface Session {
   currentTool?: string;
   /** Short recent-event feed (max 20 entries) */
   feed: FeedEvent[];
+  /** Subagents spawned by this session */
+  subagents: Record<string, Subagent>;
 }
 
 /**
@@ -78,7 +89,33 @@ export interface TranscriptLine {
   line: any;
 }
 
+export interface SubagentAppeared {
+  type: "subagent_appeared";
+  pid: number;
+  subagentId: string;
+  agentType: string;
+  description: string;
+  toolUseId: string;
+}
+
+export interface SubagentEnded {
+  type: "subagent_ended";
+  pid: number;
+  subagentId: string;
+}
+
+export interface SubagentTranscriptLine {
+  type: "subagent_transcript_line";
+  pid: number;
+  subagentId: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  line: any;
+}
+
 export type DomainEvent =
   | SessionAppeared
   | SessionEnded
-  | TranscriptLine;
+  | TranscriptLine
+  | SubagentAppeared
+  | SubagentEnded
+  | SubagentTranscriptLine;

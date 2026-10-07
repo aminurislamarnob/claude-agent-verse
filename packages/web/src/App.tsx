@@ -1,8 +1,17 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, Fragment } from "react";
 
 // ── Types (subset of @claude-agent-verse/core) ───────────────
 
 type AgentState = "working" | "thinking" | "idle" | "error" | "ended";
+
+interface Subagent {
+  subagentId: string;
+  agentType: string;
+  description: string;
+  toolUseId: string;
+  state: AgentState;
+  currentTool?: string;
+}
 
 interface Session {
   pid: number;
@@ -16,6 +25,7 @@ interface Session {
   lastPrompt?: string;
   gitBranch?: string;
   currentTool?: string;
+  subagents?: Record<string, Subagent>;
 }
 
 interface Office {
@@ -92,37 +102,67 @@ function useTabTitle(sessions: Session[]): void {
 
 // ── Components ───────────────────────────────────────────────
 
-function SessionRow({ session }: { session: Session }) {
-  let stateIcon = "💤";
-  let stateLabel = "Idle";
-  if (session.state === "working") {
-    stateIcon = "⚡";
-    stateLabel = `Working (${session.currentTool || "tool"})`;
-  } else if (session.state === "thinking") {
-    stateIcon = "🤔";
-    stateLabel = "Thinking";
-  } else if (session.state === "error") {
-    stateIcon = "❌";
-    stateLabel = "Error";
+function getStateDetails(state: AgentState, tool?: string) {
+  let icon = "💤";
+  let label = "Idle";
+  if (state === "working") {
+    icon = "⚡";
+    label = `Working (${tool || "tool"})`;
+  } else if (state === "thinking") {
+    icon = "🤔";
+    label = "Thinking";
+  } else if (state === "error") {
+    icon = "❌";
+    label = "Error";
   }
+  return { icon, label, className: `state-${state}` };
+}
 
-  const stateClass = `state-${session.state}`;
+function SessionRow({ session }: { session: Session }) {
+  const { icon, label, className } = getStateDetails(session.state, session.currentTool);
+  const subagents = Object.values(session.subagents || {});
 
   return (
-    <tr className="session-row">
-      <td className="session-name">
-        <div><strong>{session.title || session.name}</strong></div>
-        {session.lastPrompt && <div className="session-prompt" style={{fontSize: "0.85em", color: "#666"}}>{session.lastPrompt}</div>}
-      </td>
-      <td className="session-cwd" title={session.cwd}>
-        <div>{session.cwd}</div>
-        {session.gitBranch && <div className="session-branch" style={{fontSize: "0.85em", color: "#666"}}>⎇ {session.gitBranch}</div>}
-      </td>
-      <td className={`session-state ${stateClass}`}>
-        <span className="state-icon">{stateIcon}</span> {stateLabel}
-      </td>
-      <td className="session-pid">{session.pid}</td>
-    </tr>
+    <Fragment>
+      <tr className="session-row">
+        <td className="session-name">
+          <div><strong>{session.title || session.name}</strong></div>
+          {session.lastPrompt && <div className="session-prompt" style={{fontSize: "0.85em", color: "#666"}}>{session.lastPrompt}</div>}
+        </td>
+        <td className="session-cwd" title={session.cwd}>
+          <div>{session.cwd}</div>
+          {session.gitBranch && <div className="session-branch" style={{fontSize: "0.85em", color: "#666"}}>⎇ {session.gitBranch}</div>}
+        </td>
+        <td className={`session-state ${className}`}>
+          <span className="state-icon">{icon}</span> {label}
+        </td>
+        <td className="session-pid">{session.pid}</td>
+      </tr>
+      
+      {subagents.map(sub => {
+        const subState = getStateDetails(sub.state, sub.currentTool);
+        return (
+          <tr key={sub.subagentId} className="subagent-row">
+            <td className="subagent-name">
+              <div style={{ paddingLeft: "1.5rem" }}>
+                <span style={{color: "#888"}}>↳ </span>
+                <strong>{sub.agentType}</strong> 
+                <span style={{fontSize: "0.85em", color: "#666", marginLeft: "8px"}}>{sub.description}</span>
+              </div>
+            </td>
+            <td className="subagent-cwd" title={session.cwd}>
+              {/* Inherits cwd conceptually */}
+            </td>
+            <td className={`session-state ${subState.className}`}>
+              <span className="state-icon">{subState.icon}</span> {subState.label}
+            </td>
+            <td className="session-pid">
+              <span style={{ color: "#666", fontSize: "0.85em" }}>{sub.subagentId.slice(0, 8)}...</span>
+            </td>
+          </tr>
+        );
+      })}
+    </Fragment>
   );
 }
 
@@ -166,10 +206,10 @@ export function App() {
                 <table className="sessions-table" style={{ width: "100%", textAlign: "left", borderCollapse: "collapse" }}>
                   <thead>
                     <tr style={{ borderBottom: "1px solid #ddd" }}>
-                      <th>Session / Prompt</th>
+                      <th>Session / Subagent</th>
                       <th>Directory / Branch</th>
                       <th>State</th>
-                      <th>PID</th>
+                      <th>ID</th>
                     </tr>
                   </thead>
                   <tbody>

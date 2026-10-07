@@ -189,6 +189,47 @@ describe("reducer", () => {
     });
   });
 
+  describe("subagent lifecycle", () => {
+    it("can spawn and run a subagent", () => {
+      let office = emptyOffice();
+      office = reduce(office, appeared());
+
+      // Spawn
+      office = reduce(office, {
+        type: "subagent_appeared",
+        pid: 1001,
+        subagentId: "agent-123",
+        agentType: "Researcher",
+        description: "Find files",
+        toolUseId: "toolu_xyz",
+      });
+
+      expect(office.sessions[1001]!.subagents["agent-123"]).toBeDefined();
+      expect(office.sessions[1001]!.subagents["agent-123"].state).toBe("idle");
+
+      // Work
+      office = reduce(office, {
+        type: "subagent_transcript_line",
+        pid: 1001,
+        subagentId: "agent-123",
+        line: {
+          type: "assistant",
+          message: { content: [{ type: "tool_use", name: "Grep" }] }
+        }
+      });
+      expect(office.sessions[1001]!.subagents["agent-123"].state).toBe("working");
+      expect(office.sessions[1001]!.subagents["agent-123"].currentTool).toBe("Grep");
+
+      // End
+      office = reduce(office, {
+        type: "subagent_ended",
+        pid: 1001,
+        subagentId: "agent-123",
+      });
+      expect(office.sessions[1001]!.subagents["agent-123"]).toBeUndefined();
+    });
+  });
+
   describe("catch-up", () => {
     it("yields the same Office as continuous observation", () => {
       // Continuous observation
@@ -214,6 +255,23 @@ describe("reducer", () => {
               { type: "tool_use", name: "Bash", id: "t1" }
             ]
           }
+        }
+      });
+      office = reduce(office, {
+        type: "subagent_appeared",
+        pid: 1001,
+        subagentId: "agent-999",
+        agentType: "Coder",
+        description: "Write tests",
+        toolUseId: "t1",
+      });
+      office = reduce(office, {
+        type: "subagent_transcript_line",
+        pid: 1001,
+        subagentId: "agent-999",
+        line: {
+          type: "assistant",
+          message: { content: [{ type: "tool_use", name: "Editor" }] }
         }
       });
       const continuousOffice = office;
@@ -242,6 +300,23 @@ describe("reducer", () => {
               ]
             }
           }
+        },
+        {
+          type: "subagent_appeared",
+          pid: 1001,
+          subagentId: "agent-999",
+          agentType: "Coder",
+          description: "Write tests",
+          toolUseId: "t1",
+        },
+        {
+          type: "subagent_transcript_line",
+          pid: 1001,
+          subagentId: "agent-999",
+          line: {
+            type: "assistant",
+            message: { content: [{ type: "tool_use", name: "Editor" }] }
+          }
         }
       );
 
@@ -250,6 +325,7 @@ describe("reducer", () => {
       expect(catchUpOffice.sessions[1001]!.currentTool).toBe("Bash");
       expect(catchUpOffice.sessions[1001]!.title).toBe("Fix login bug");
       expect(catchUpOffice.sessions[1001]!.gitBranch).toBe("feature/login");
+      expect(catchUpOffice.sessions[1001]!.subagents["agent-999"].state).toBe("working");
     });
   });
 

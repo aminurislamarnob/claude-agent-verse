@@ -9,7 +9,7 @@
  */
 
 import { createServer } from "node:http";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { join, extname } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -36,6 +36,8 @@ const WEB_DIST = join(__dirname, "..", "..", "web", "dist");
 let office: Office = emptyOffice();
 let scanSnapshot: ScanSnapshot = emptyScanSnapshot();
 const tailers = new Map<number, FileTailer>();
+const subagentTailers = new Map<string, FileTailer>();
+const finishedSubagents = new Set<string>();
 
 // ── MIME types ───────────────────────────────────────────────
 
@@ -166,10 +168,20 @@ function dispatch(event: DomainEvent): void {
       tailer.stop();
       tailers.delete(event.pid);
     }
+    // Clean up subagent tailers and finished states
+    for (const [key, subTailer] of subagentTailers.entries()) {
+      if (key.startsWith(`${event.pid}-`)) {
+        subTailer.stop();
+        subagentTailers.delete(key);
+      }
+    }
+    for (const key of finishedSubagents) {
+      if (key.startsWith(`${event.pid}-`)) {
+        finishedSubagents.delete(key);
+      }
+    }
   }
 
-  // We should debounce broadcasts or just broadcast on every state change.
-  // We'll broadcast immediately for now.
   broadcast({ type: "snapshot", office });
 }
 
@@ -182,6 +194,55 @@ async function poll(): Promise<void> {
 
     for (const event of result.events) {
       dispatch(event);
+    }
+
+    // Discover subagents for active sessions
+    for (const session of Object.values(office.sessions)) {
+      const slug = session.cwd.replace(/\//g, "-");
+      const subagentsDir = join(homedir(), ".claude", "projects", slug, "subagents");
+      try {
+        const files = await readdir(subagentsDir);
+        const metaFiles = files.filter(f => f.endsWith(".meta.json"));
+        for (const metaFile of metaFiles) {
+          const subagentId = metaFile.replace("agent-", "").replace(".meta.json", "");
+          const key = `${session.pid}-${subagentId}`;
+          if (!subagentTailers.has(key) && !finishedSubagents.has(key)) {
+            const metaContent = await readFile(join(subagentsDir, metaFile), "utf-8");
+            const meta = JSON.parse(metaContent);
+
+            dispatch({
+              type: "subagent_appeared",
+              pid: session.pid,
+              subagentId,
+              agentType: meta.agentType || "Agent",
+              description: meta.description || "",
+              toolUseId: meta.toolUseId,
+            });
+
+            const jsonlPath = join(subagentsDir, `agent-${subagentId}.jsonl`);
+            const tailer = new FileTailer(jsonlPath);
+            subagentTailers.set(key, tailer);
+
+            tailer.on("line", (line) => {
+              dispatch({ type: "subagent_transcript_line", pid: session.pid, subagentId, line });
+
+              if (line.type === "assistant" && Array.isArray(line.message?.content)) {
+                const hasToolUse = line.message.content.some((c: any) => c.type === "tool_use");
+                if (!hasToolUse) {
+                  dispatch({ type: "subagent_ended", pid: session.pid, subagentId });
+                  tailer.stop();
+                  subagentTailers.delete(key);
+                  finishedSubagents.add(key);
+                }
+              }
+            });
+
+            tailer.start().catch(() => {});
+          }
+        }
+      } catch (err: any) {
+        // subagents dir doesn't exist yet, ignore
+      }
     }
   } catch (err) {
     console.error("[poll] Error scanning sessions:", err);

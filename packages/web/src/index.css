@@ -94,7 +94,8 @@ header h1 {
   border-bottom: 1px solid var(--border);
 }
 
-.session-row:hover {
+.session-row:hover,
+.subagent-row:hover {
   background: var(--surface);
 }
 
