@@ -17,10 +17,13 @@ import { reduce, emptyOffice } from "@claude-agent-verse/core";
 import type { Office, DomainEvent } from "@claude-agent-verse/core";
 import { scan, emptyScanSnapshot } from "./scanner.js";
 import type { ScanSnapshot } from "./scanner.js";
+import { generateToken, isAllowedOrigin, isValidToken } from "./auth.js";
 
 const HOST = "127.0.0.1";
 const PORT = parseInt(process.env.PORT ?? "4800", 10);
 const POLL_INTERVAL_MS = 1000;
+
+const browserToken = generateToken();
 
 // Resolve the web package's dist directory for serving static files.
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
@@ -47,8 +50,7 @@ const MIME: Record<string, string> = {
 
 const server = createServer(async (req, res) => {
   // Origin check — only allow requests from the same origin.
-  const origin = req.headers.origin;
-  if (origin && !origin.startsWith(`http://${HOST}`)) {
+  if (!isAllowedOrigin(req.headers.origin, `${HOST}:${PORT}`)) {
     res.writeHead(403);
     res.end("Forbidden");
     return;
@@ -62,7 +64,10 @@ const server = createServer(async (req, res) => {
   }
 
   // Static file serving for the web frontend.
-  let filePath = req.url === "/" ? "/index.html" : req.url ?? "/index.html";
+  let filePath = req.url?.split("?")[0];
+  if (!filePath || filePath === "/") {
+    filePath = "/index.html";
+  }
 
   // Security: prevent path traversal.
   filePath = filePath.replace(/\.\./g, "");
@@ -90,16 +95,29 @@ const server = createServer(async (req, res) => {
 
 // ── WebSocket server ─────────────────────────────────────────
 
-const wss = new WebSocketServer({ server });
+const wss = new WebSocketServer({ noServer: true });
 
-wss.on("connection", (ws, req) => {
+server.on("upgrade", (req, socket, head) => {
   // Origin check for WebSocket connections.
-  const origin = req.headers.origin;
-  if (origin && !origin.startsWith(`http://${HOST}`)) {
-    ws.close(1008, "Forbidden");
+  if (!isAllowedOrigin(req.headers.origin, `${HOST}:${PORT}`)) {
+    socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
+    socket.destroy();
     return;
   }
 
+  // Token check for WebSocket connections.
+  if (!isValidToken(req.url, browserToken)) {
+    socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
+    socket.destroy();
+    return;
+  }
+
+  wss.handleUpgrade(req, socket, head, (ws) => {
+    wss.emit("connection", ws, req);
+  });
+});
+
+wss.on("connection", (ws) => {
   // Send full Office snapshot on connect.
   ws.send(JSON.stringify({ type: "snapshot", office }));
 });
@@ -140,8 +158,8 @@ async function poll(): Promise<void> {
 server.listen(PORT, HOST, () => {
   console.log(`\n  🏢 Claude Agent Verse`);
   console.log(`  ─────────────────────`);
-  console.log(`  Debug list: http://${HOST}:${PORT}`);
-  console.log(`  WebSocket:  ws://${HOST}:${PORT}`);
+  console.log(`  Debug list: http://${HOST}:${PORT}?token=${browserToken}`);
+  console.log(`  WebSocket:  ws://${HOST}:${PORT}?token=${browserToken}`);
   console.log(`  Polling sessions every ${POLL_INTERVAL_MS}ms\n`);
 
   // Initial scan.

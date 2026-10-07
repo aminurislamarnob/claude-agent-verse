@@ -27,7 +27,8 @@ function useOffice(): { office: Office; connected: boolean } {
   const connect = useCallback(() => {
     // Determine WebSocket URL based on current location.
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const wsUrl = `${proto}//${window.location.host}`;
+    const token = new URLSearchParams(window.location.search).get("token") || "";
+    const wsUrl = `${proto}//${window.location.host}?token=${token}`;
 
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
