@@ -1,47 +1,12 @@
-import { useEffect, useRef, useState, useCallback, Fragment } from "react";
-import { OfficeScene } from "./OfficeScene";
-import { InspectorPanel } from "./components/InspectorPanel";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { OfficeScene, type Focus } from "./scene/OfficeScene";
+import { InspectorPanel } from "./hud/InspectorPanel";
+import { TopBar } from "./hud/TopBar";
+import { AgentList } from "./hud/AgentList";
+import { isPreview, subscribePreview } from "./preview";
+import type { Office } from "./types";
 
-// ── Types (subset of @claude-agent-verse/core) ───────────────
-
-export type AgentState = "working" | "thinking" | "idle" | "error" | "ended" | "waiting_on_user";
-
-export interface Subagent {
-  subagentId: string;
-  agentType: string;
-  description: string;
-  toolUseId: string;
-  state: AgentState;
-  currentTool?: string;
-}
-
-export interface FeedEvent {
-  id: string;
-  role: "user" | "assistant";
-  type: "text" | "tool_use" | "tool_result" | "error";
-  excerpt: string;
-}
-
-export interface Session {
-  pid: number;
-  sessionId: string;
-  cwd: string;
-  name: string;
-  state: AgentState;
-  projectKey: string;
-  startedAt: number;
-  title?: string;
-  lastPrompt?: string;
-  gitBranch?: string;
-  currentTool?: string;
-  feed: FeedEvent[];
-  subagents?: Record<string, Subagent>;
-}
-
-export interface Office {
-  sessions: Record<number, Session>;
-  waitingCount: number;
-}
+export type { AgentState, FeedEvent, Office, Session, Subagent } from "./types";
 
 // ── WebSocket hook ───────────────────────────────────────────
 
@@ -52,42 +17,32 @@ function useOffice(): { office: Office; connected: boolean } {
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const connect = useCallback(() => {
-    // Determine WebSocket URL based on current location.
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
     const token = new URLSearchParams(window.location.search).get("token") || "";
-    const wsUrl = `${proto}//${window.location.host}?token=${token}`;
-
-    const ws = new WebSocket(wsUrl);
+    const ws = new WebSocket(`${proto}//${window.location.host}?token=${token}`);
     wsRef.current = ws;
-
-    ws.onopen = () => {
-      setConnected(true);
-    };
-
+    ws.onopen = () => setConnected(true);
     ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data);
-        if (msg.type === "snapshot" && msg.office) {
-          setOffice(msg.office);
-        }
+        if (msg.type === "snapshot" && msg.office) setOffice(msg.office);
       } catch {
         // Ignore malformed messages.
       }
     };
-
     ws.onclose = () => {
       setConnected(false);
       wsRef.current = null;
-      // Reconnect after 2 seconds.
       reconnectTimer.current = setTimeout(connect, 2000);
     };
-
-    ws.onerror = () => {
-      ws.close();
-    };
+    ws.onerror = () => ws.close();
   }, []);
 
   useEffect(() => {
+    if (isPreview) {
+      setConnected(true);
+      return subscribePreview(setOffice);
+    }
     connect();
     return () => {
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
@@ -98,217 +53,117 @@ function useOffice(): { office: Office; connected: boolean } {
   return { office, connected };
 }
 
-// ── Tab title updater ────────────────────────────────────────
+// ── Tab title + favicon badge ────────────────────────────────
 
 function useTabTitle(waitingCount: number): void {
   useEffect(() => {
-    if (waitingCount > 0) {
-      document.title = `(${waitingCount}) Agent Verse`;
-    } else {
-      document.title = "Agent Verse";
-    }
+    document.title = waitingCount > 0 ? `(${waitingCount}) Agent Verse` : "Agent Verse";
   }, [waitingCount]);
 }
 
 function useFaviconBadge(waitingCount: number): void {
   useEffect(() => {
-    let link = document.querySelector("link[rel~='icon']") as HTMLLinkElement;
+    let link = document.querySelector("link[rel~='icon']") as HTMLLinkElement | null;
     if (!link) {
       link = document.createElement("link");
       link.rel = "icon";
       document.head.appendChild(link);
     }
-    
     const canvas = document.createElement("canvas");
-    canvas.width = 32;
-    canvas.height = 32;
+    canvas.width = canvas.height = 64;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    
-    ctx.fillStyle = "#1a1a1e";
-    ctx.fillRect(0, 0, 32, 32);
-    ctx.fillStyle = "#6366f1";
-    ctx.fillRect(6, 6, 20, 20);
-
+    ctx.fillStyle = "#1d1f24";
+    ctx.beginPath();
+    ctx.roundRect(4, 4, 56, 56, 16);
+    ctx.fill();
+    ctx.strokeStyle = "#d97757";
+    ctx.lineWidth = 6;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(24, 22);
+    ctx.lineTo(14, 32);
+    ctx.lineTo(24, 42);
+    ctx.moveTo(40, 22);
+    ctx.lineTo(50, 32);
+    ctx.lineTo(40, 42);
+    ctx.stroke();
     if (waitingCount > 0) {
-      ctx.fillStyle = "#ef4444";
+      ctx.fillStyle = "#f59e0b";
       ctx.beginPath();
-      ctx.arc(24, 8, 8, 0, 2 * Math.PI);
+      ctx.arc(48, 16, 15, 0, Math.PI * 2);
       ctx.fill();
-      
-      ctx.fillStyle = "white";
-      ctx.font = "bold 10px sans-serif";
+      ctx.fillStyle = "#1d1f24";
+      ctx.font = "bold 20px -apple-system, sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(waitingCount.toString(), 24, 8);
+      ctx.fillText(String(Math.min(waitingCount, 9)), 48, 17);
     }
-
     link.href = canvas.toDataURL("image/png");
   }, [waitingCount]);
 }
 
-// ── Components ───────────────────────────────────────────────
-
-function getStateDetails(state: AgentState, tool?: string) {
-  let icon = "💤";
-  let label = "Idle";
-  if (state === "working") {
-    icon = "⚡";
-    label = `Working (${tool || "tool"})`;
-  } else if (state === "thinking") {
-    icon = "🤔";
-    label = "Thinking";
-  } else if (state === "error") {
-    icon = "❌";
-    label = "Error";
-  } else if (state === "waiting_on_user") {
-    icon = "✋";
-    label = "Waiting on you";
-  }
-  return { icon, label, className: `state-${state}` };
+function useMediaQuery(query: string): boolean {
+  const [match, setMatch] = useState(() => window.matchMedia(query).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(query);
+    const onChange = () => setMatch(mq.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, [query]);
+  return match;
 }
 
-function SessionRow({ session }: { session: Session }) {
-  const { icon, label, className } = getStateDetails(session.state, session.currentTool);
-  const subagents = Object.values(session.subagents || {});
-
-  return (
-    <Fragment>
-      <tr className="session-row">
-        <td className="session-name">
-          <div><strong>{session.title || session.name}</strong></div>
-          {session.lastPrompt && <div className="session-prompt" style={{fontSize: "0.85em", color: "#666"}}>{session.lastPrompt}</div>}
-        </td>
-        <td className="session-cwd" title={session.cwd}>
-          <div>{session.cwd}</div>
-          {session.gitBranch && <div className="session-branch" style={{fontSize: "0.85em", color: "#666"}}>⎇ {session.gitBranch}</div>}
-        </td>
-        <td className={`session-state ${className}`}>
-          <span className="state-icon">{icon}</span> {label}
-        </td>
-        <td className="session-pid">{session.pid}</td>
-      </tr>
-      
-      {subagents.map(sub => {
-        const subState = getStateDetails(sub.state, sub.currentTool);
-        return (
-          <tr key={sub.subagentId} className="subagent-row">
-            <td className="subagent-name">
-              <div style={{ paddingLeft: "1.5rem" }}>
-                <span style={{color: "#888"}}>↳ </span>
-                <strong>{sub.agentType}</strong> 
-                <span style={{fontSize: "0.85em", color: "#666", marginLeft: "8px"}}>{sub.description}</span>
-              </div>
-            </td>
-            <td className="subagent-cwd" title={session.cwd}>
-              {/* Inherits cwd conceptually */}
-            </td>
-            <td className={`session-state ${subState.className}`}>
-              <span className="state-icon">{subState.icon}</span> {subState.label}
-            </td>
-            <td className="session-pid">
-              <span style={{ color: "#666", fontSize: "0.85em" }}>{sub.subagentId.slice(0, 8)}...</span>
-            </td>
-          </tr>
-        );
-      })}
-    </Fragment>
-  );
-}
+// ── App ──────────────────────────────────────────────────────
 
 export function App() {
   const { office, connected } = useOffice();
-  const [focusedAgent, setFocusedAgent] = useState<{pid: number, subagentId?: string} | null>(null);
+  const [focus, setFocus] = useState<Focus>(null);
+  const [listOpen, setListOpen] = useState(true);
 
-  const sessions = Object.values(office.sessions);
-  const byProject = sessions.reduce((acc, s) => {
-    acc[s.projectKey] = acc[s.projectKey] || [];
-    acc[s.projectKey].push(s);
-    return acc;
-  }, {} as Record<string, Session[]>);
-
-  const projectKeys = Object.keys(byProject).sort();
-
+  const wide = useMediaQuery("(min-width: 901px)");
   useTabTitle(office.waitingCount);
   useFaviconBadge(office.waitingCount);
-  
-  const focusedSession = focusedAgent ? office.sessions[focusedAgent.pid] : null;
-  // Auto-close if session died
+
+  const focusedSession = focus ? office.sessions[focus.pid] : undefined;
   useEffect(() => {
-    if (focusedAgent && !focusedSession) {
-      setFocusedAgent(null);
-    }
-  }, [focusedSession, focusedAgent]);
+    if (focus && !focusedSession) setFocus(null);
+  }, [focus, focusedSession]);
+  const sideOpen = listOpen || !!focusedSession;
 
   return (
-    <div className="app-container">
-      <div className="diorama-view">
-        <OfficeScene 
-          office={office} 
-          focusedAgent={focusedAgent}
-          onFocusAgent={(pid, subagentId) => setFocusedAgent({ pid, subagentId })}
-        />
-        
-        {focusedSession && (
-          <InspectorPanel 
-            session={focusedSession}
-            focusedSubagentId={focusedAgent?.subagentId}
-            onClose={() => setFocusedAgent(null)}
-            onFocusSubagent={(subId) => setFocusedAgent({ pid: focusedSession.pid, subagentId: subId })}
-            onFocusSession={() => setFocusedAgent({ pid: focusedSession.pid })}
-          />
-        )}
+    <div className="app-shell">
+      <div className="scene">
+        <OfficeScene office={office} focus={focus} onSelect={setFocus} insetRight={sideOpen && wide ? 380 : 0} />
       </div>
-      
-      <div className="debug-sidebar">
-        <div className="app">
-          <header>
-            <h1>🏢 Claude Agent Verse</h1>
-            <span className={`connection ${connected ? "connected" : "disconnected"}`}>
-              {connected ? "● Connected" : "○ Disconnected"}
-            </span>
-          </header>
 
-          {sessions.length === 0 ? (
-            <div className="empty">
-              <p>No live Claude Code sessions found.</p>
-              <p className="hint">
-                Start a Claude Code session and it will appear here within ~1 second.
-              </p>
-            </div>
-          ) : (
-            <div className="projects">
-              {projectKeys.map((projectKey) => {
-                const projectSessions = byProject[projectKey].sort((a, b) => a.name.localeCompare(b.name));
-                return (
-                  <div key={projectKey} className="project-group" style={{ marginBottom: "2rem" }}>
-                    <h2>Project: {projectKey}</h2>
-                    <table className="sessions-table" style={{ width: "100%", textAlign: "left", borderCollapse: "collapse" }}>
-                      <thead>
-                        <tr style={{ borderBottom: "1px solid #ddd" }}>
-                          <th>Session / Subagent</th>
-                          <th>Directory / Branch</th>
-                          <th>State</th>
-                          <th>ID</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {projectSessions.map((s) => (
-                          <SessionRow key={s.pid} session={s} />
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+      <TopBar office={office} connected={connected} preview={isPreview} />
 
-          <footer>
-            <span>{sessions.length} session{sessions.length === 1 ? "" : "s"}</span>
-          </footer>
+      {Object.keys(office.sessions).length === 0 && (
+        <div className="empty-state">
+          <h2>The office is quiet</h2>
+          <p>Start a Claude Code session and its agent will walk in within a second.</p>
         </div>
-      </div>
+      )}
+
+      <aside className={`side ${sideOpen ? "side--open" : ""}`}>
+        {focusedSession ? (
+          <InspectorPanel
+            session={focusedSession}
+            focusedSubagentId={focus?.subagentId}
+            onClose={() => setFocus(null)}
+            onFocusSubagent={(subagentId) => setFocus({ pid: focusedSession.pid, subagentId })}
+            onFocusSession={() => setFocus({ pid: focusedSession.pid })}
+          />
+        ) : (
+          listOpen && <AgentList office={office} onSelect={setFocus} onClose={() => setListOpen(false)} />
+        )}
+      </aside>
+      {!listOpen && !focusedSession && (
+        <button className="side-toggle" onClick={() => setListOpen(true)}>
+          Agents <span>{Object.keys(office.sessions).length}</span>
+        </button>
+      )}
     </div>
   );
 }
