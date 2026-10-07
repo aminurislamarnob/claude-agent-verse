@@ -4,8 +4,7 @@ export type {
   Office,
   DomainEvent,
   SessionAppeared,
-  SessionBusy,
-  SessionIdle,
+  TranscriptLine,
   SessionEnded,
 } from "./types.js";
 

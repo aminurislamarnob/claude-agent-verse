@@ -121,12 +121,20 @@ header h1 {
   font-weight: 600;
 }
 
-.state-busy {
+.state-working {
   color: var(--busy);
+}
+
+.state-thinking {
+  color: #a78bfa;
 }
 
 .state-idle {
   color: var(--idle);
+}
+
+.state-error {
+  color: var(--red);
 }
 
 .state-icon {
@@ -137,6 +145,13 @@ header h1 {
   color: var(--text-muted);
   font-family: "SF Mono", "Fira Code", "Fira Mono", monospace;
   font-size: 0.8rem;
+}
+
+.project-group h2 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: #fff;
 }
 
 footer {

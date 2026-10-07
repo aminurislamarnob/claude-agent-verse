@@ -3,10 +3,15 @@
 
 /**
  * Agent State — the visible state of a session character.
- * For issue #2, we only need "busy" and "idle".
- * Later issues will add "thinking", "waiting_on_user", "error", "finished".
  */
-export type AgentState = "busy" | "idle";
+export type AgentState = "working" | "thinking" | "idle" | "error" | "ended";
+
+export interface FeedEvent {
+  id: string;
+  role: "user" | "assistant";
+  type: "text" | "tool_use" | "tool_result" | "error";
+  excerpt: string;
+}
 
 /**
  * Session — one running Claude Code process.
@@ -27,6 +32,17 @@ export interface Session {
   projectKey: string;
   /** Epoch ms when the session started. */
   startedAt: number;
+
+  /** Session title derived from transcript ai-title */
+  title?: string;
+  /** Last prompt given to the agent */
+  lastPrompt?: string;
+  /** Git branch active in the cwd */
+  gitBranch?: string;
+  /** Name of the tool currently being used (when state is 'working') */
+  currentTool?: string;
+  /** Short recent-event feed (max 20 entries) */
+  feed: FeedEvent[];
 }
 
 /**
@@ -46,19 +62,8 @@ export interface SessionAppeared {
   sessionId: string;
   cwd: string;
   name: string;
-  state: AgentState;
   projectKey: string;
   startedAt: number;
-}
-
-export interface SessionBusy {
-  type: "session_busy";
-  pid: number;
-}
-
-export interface SessionIdle {
-  type: "session_idle";
-  pid: number;
 }
 
 export interface SessionEnded {
@@ -66,8 +71,14 @@ export interface SessionEnded {
   pid: number;
 }
 
+export interface TranscriptLine {
+  type: "transcript_line";
+  pid: number;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  line: any;
+}
+
 export type DomainEvent =
   | SessionAppeared
-  | SessionBusy
-  | SessionIdle
-  | SessionEnded;
+  | SessionEnded
+  | TranscriptLine;

@@ -2,14 +2,20 @@ import { useEffect, useRef, useState, useCallback } from "react";
 
 // ── Types (subset of @claude-agent-verse/core) ───────────────
 
+type AgentState = "working" | "thinking" | "idle" | "error" | "ended";
+
 interface Session {
   pid: number;
   sessionId: string;
   cwd: string;
   name: string;
-  state: "busy" | "idle";
+  state: AgentState;
   projectKey: string;
   startedAt: number;
+  title?: string;
+  lastPrompt?: string;
+  gitBranch?: string;
+  currentTool?: string;
 }
 
 interface Office {
@@ -87,16 +93,30 @@ function useTabTitle(sessions: Session[]): void {
 // ── Components ───────────────────────────────────────────────
 
 function SessionRow({ session }: { session: Session }) {
-  const stateIcon = session.state === "busy" ? "⚡" : "💤";
-  const stateLabel = session.state === "busy" ? "Busy" : "Idle";
-  const stateClass = session.state === "busy" ? "state-busy" : "state-idle";
+  let stateIcon = "💤";
+  let stateLabel = "Idle";
+  if (session.state === "working") {
+    stateIcon = "⚡";
+    stateLabel = `Working (${session.currentTool || "tool"})`;
+  } else if (session.state === "thinking") {
+    stateIcon = "🤔";
+    stateLabel = "Thinking";
+  } else if (session.state === "error") {
+    stateIcon = "❌";
+    stateLabel = "Error";
+  }
+
+  const stateClass = `state-${session.state}`;
 
   return (
     <tr className="session-row">
-      <td className="session-name">{session.name}</td>
-      <td className="session-project">{session.projectKey}</td>
+      <td className="session-name">
+        <div><strong>{session.title || session.name}</strong></div>
+        {session.lastPrompt && <div className="session-prompt" style={{fontSize: "0.85em", color: "#666"}}>{session.lastPrompt}</div>}
+      </td>
       <td className="session-cwd" title={session.cwd}>
-        {session.cwd}
+        <div>{session.cwd}</div>
+        {session.gitBranch && <div className="session-branch" style={{fontSize: "0.85em", color: "#666"}}>⎇ {session.gitBranch}</div>}
       </td>
       <td className={`session-state ${stateClass}`}>
         <span className="state-icon">{stateIcon}</span> {stateLabel}
@@ -109,9 +129,14 @@ function SessionRow({ session }: { session: Session }) {
 export function App() {
   const { office, connected } = useOffice();
 
-  const sessions = Object.values(office.sessions).sort(
-    (a, b) => a.name.localeCompare(b.name),
-  );
+  const sessions = Object.values(office.sessions);
+  const byProject = sessions.reduce((acc, s) => {
+    acc[s.projectKey] = acc[s.projectKey] || [];
+    acc[s.projectKey].push(s);
+    return acc;
+  }, {} as Record<string, Session[]>);
+
+  const projectKeys = Object.keys(byProject).sort();
 
   useTabTitle(sessions);
 
@@ -132,22 +157,31 @@ export function App() {
           </p>
         </div>
       ) : (
-        <table className="sessions-table">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Project</th>
-              <th>Working Directory</th>
-              <th>State</th>
-              <th>PID</th>
-            </tr>
-          </thead>
-          <tbody>
-            {sessions.map((s) => (
-              <SessionRow key={s.pid} session={s} />
-            ))}
-          </tbody>
-        </table>
+        <div className="projects">
+          {projectKeys.map((projectKey) => {
+            const projectSessions = byProject[projectKey].sort((a, b) => a.name.localeCompare(b.name));
+            return (
+              <div key={projectKey} className="project-group" style={{ marginBottom: "2rem" }}>
+                <h2>Project: {projectKey}</h2>
+                <table className="sessions-table" style={{ width: "100%", textAlign: "left", borderCollapse: "collapse" }}>
+                  <thead>
+                    <tr style={{ borderBottom: "1px solid #ddd" }}>
+                      <th>Session / Prompt</th>
+                      <th>Directory / Branch</th>
+                      <th>State</th>
+                      <th>PID</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {projectSessions.map((s) => (
+                      <SessionRow key={s.pid} session={s} />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })}
+        </div>
       )}
 
       <footer>

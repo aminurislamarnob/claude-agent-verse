@@ -11,7 +11,6 @@ function appeared(overrides: Partial<SessionAppeared> = {}): SessionAppeared {
     sessionId: "aaa-bbb-ccc",
     cwd: "/projects/acme-app",
     name: "fix-login-bug",
-    state: "idle",
     projectKey: "acme-app",
     startedAt: 1700000000000,
     ...overrides,
@@ -42,46 +41,144 @@ describe("reducer", () => {
       expect(s.state).toBe("idle");
       expect(s.projectKey).toBe("acme-app");
       expect(s.startedAt).toBe(1700000000000);
-    });
-
-    it("can add multiple sessions", () => {
-      const office = officeWith(
-        appeared({ pid: 1001 }),
-        appeared({ pid: 1002, sessionId: "ddd-eee-fff", name: "add-tests" }),
-      );
-      expect(Object.keys(office.sessions)).toHaveLength(2);
-      expect(office.sessions[1001]).toBeDefined();
-      expect(office.sessions[1002]).toBeDefined();
+      expect(s.feed).toEqual([]);
     });
   });
 
-  describe("session_busy", () => {
-    it("sets an existing session to busy", () => {
-      const office = officeWith(appeared({ state: "idle" }), {
-        type: "session_busy",
-        pid: 1001,
-      });
-      expect(office.sessions[1001]!.state).toBe("busy");
-    });
-
-    it("is a no-op for unknown pid", () => {
-      const office = officeWith({ type: "session_busy", pid: 9999 });
-      expect(Object.keys(office.sessions)).toHaveLength(0);
-    });
-  });
-
-  describe("session_idle", () => {
-    it("sets an existing session to idle", () => {
+  describe("transcript_line", () => {
+    it("processes ai-title", () => {
       const office = officeWith(
-        appeared({ state: "busy" }),
-        { type: "session_idle", pid: 1001 },
+        appeared(),
+        {
+          type: "transcript_line",
+          pid: 1001,
+          line: { type: "ai-title", aiTitle: "Fix login flow" },
+        }
       );
-      expect(office.sessions[1001]!.state).toBe("idle");
+      expect(office.sessions[1001]!.title).toBe("Fix login flow");
     });
 
-    it("is a no-op for unknown pid", () => {
-      const office = officeWith({ type: "session_idle", pid: 9999 });
-      expect(Object.keys(office.sessions)).toHaveLength(0);
+    it("processes gitBranch and last-prompt", () => {
+      const office = officeWith(
+        appeared(),
+        {
+          type: "transcript_line",
+          pid: 1001,
+          line: { gitBranch: "feature/login-bug" },
+        },
+        {
+          type: "transcript_line",
+          pid: 1001,
+          line: { type: "last-prompt", lastPrompt: "Can you fix the login?" },
+        }
+      );
+      expect(office.sessions[1001]!.gitBranch).toBe("feature/login-bug");
+      expect(office.sessions[1001]!.lastPrompt).toBe("Can you fix the login?");
+    });
+
+    it("transitions to working when tool is used", () => {
+      const office = officeWith(
+        appeared(),
+        {
+          type: "transcript_line",
+          pid: 1001,
+          line: {
+            type: "assistant",
+            message: {
+              content: [
+                { type: "text", text: "I will use Bash" },
+                { type: "tool_use", name: "Bash", id: "tool_1" }
+              ]
+            }
+          }
+        }
+      );
+      const s = office.sessions[1001]!;
+      expect(s.state).toBe("working");
+      expect(s.currentTool).toBe("Bash");
+      expect(s.feed.length).toBe(1);
+      expect(s.feed[0].type).toBe("tool_use");
+    });
+
+    it("transitions to error when tool result is error", () => {
+      const office = officeWith(
+        appeared(),
+        {
+          type: "transcript_line",
+          pid: 1001,
+          line: {
+            type: "user",
+            message: {
+              content: [
+                { type: "tool_result", tool_use_id: "tool_1", is_error: true, content: "Command failed" }
+              ]
+            }
+          }
+        }
+      );
+      const s = office.sessions[1001]!;
+      expect(s.state).toBe("error");
+      expect(s.currentTool).toBeUndefined();
+    });
+
+    it("transitions to thinking when user provides successful tool result", () => {
+      const office = officeWith(
+        appeared(),
+        {
+          type: "transcript_line",
+          pid: 1001,
+          line: {
+            type: "user",
+            message: {
+              content: [
+                { type: "tool_result", tool_use_id: "tool_1", is_error: false, content: "Success" }
+              ]
+            }
+          }
+        }
+      );
+      const s = office.sessions[1001]!;
+      expect(s.state).toBe("thinking");
+    });
+
+    it("transitions to thinking when user provides text", () => {
+      const office = officeWith(
+        appeared(),
+        {
+          type: "transcript_line",
+          pid: 1001,
+          line: {
+            type: "user",
+            message: {
+              content: [
+                { type: "text", text: "Please continue" }
+              ]
+            }
+          }
+        }
+      );
+      const s = office.sessions[1001]!;
+      expect(s.state).toBe("thinking");
+    });
+
+    it("transitions to idle when assistant responds with text without tools", () => {
+      const office = officeWith(
+        appeared(),
+        {
+          type: "transcript_line",
+          pid: 1001,
+          line: {
+            type: "assistant",
+            message: {
+              content: [
+                { type: "text", text: "I am done." }
+              ]
+            }
+          }
+        }
+      );
+      const s = office.sessions[1001]!;
+      expect(s.state).toBe("idle");
     });
   });
 
@@ -90,38 +187,69 @@ describe("reducer", () => {
       const office = officeWith(appeared(), { type: "session_ended", pid: 1001 });
       expect(Object.keys(office.sessions)).toHaveLength(0);
     });
-
-    it("is a no-op for unknown pid", () => {
-      const before = officeWith(appeared());
-      const after = reduce(before, { type: "session_ended", pid: 9999 });
-      expect(Object.keys(after.sessions)).toHaveLength(1);
-    });
   });
 
-  describe("full lifecycle: appear → busy → idle → ended", () => {
-    it("transitions correctly through the whole lifecycle", () => {
+  describe("catch-up", () => {
+    it("yields the same Office as continuous observation", () => {
+      // Continuous observation
       let office = emptyOffice();
-
-      // appear (idle)
       office = reduce(office, appeared({ state: "idle" }));
-      expect(office.sessions[1001]!.state).toBe("idle");
+      office = reduce(office, {
+        type: "transcript_line",
+        pid: 1001,
+        line: { type: "ai-title", aiTitle: "Fix login bug" }
+      });
+      office = reduce(office, {
+        type: "transcript_line",
+        pid: 1001,
+        line: { gitBranch: "feature/login" }
+      });
+      office = reduce(office, {
+        type: "transcript_line",
+        pid: 1001,
+        line: {
+          type: "assistant",
+          message: {
+            content: [
+              { type: "tool_use", name: "Bash", id: "t1" }
+            ]
+          }
+        }
+      });
+      const continuousOffice = office;
 
-      // busy
-      office = reduce(office, { type: "session_busy", pid: 1001 });
-      expect(office.sessions[1001]!.state).toBe("busy");
+      // Catch-up (all at once)
+      const catchUpOffice = officeWith(
+        appeared({ state: "idle" }),
+        {
+          type: "transcript_line",
+          pid: 1001,
+          line: { type: "ai-title", aiTitle: "Fix login bug" }
+        },
+        {
+          type: "transcript_line",
+          pid: 1001,
+          line: { gitBranch: "feature/login" }
+        },
+        {
+          type: "transcript_line",
+          pid: 1001,
+          line: {
+            type: "assistant",
+            message: {
+              content: [
+                { type: "tool_use", name: "Bash", id: "t1" }
+              ]
+            }
+          }
+        }
+      );
 
-      // idle again
-      office = reduce(office, { type: "session_idle", pid: 1001 });
-      expect(office.sessions[1001]!.state).toBe("idle");
-
-      // busy again
-      office = reduce(office, { type: "session_busy", pid: 1001 });
-      expect(office.sessions[1001]!.state).toBe("busy");
-
-      // ended
-      office = reduce(office, { type: "session_ended", pid: 1001 });
-      expect(office.sessions[1001]).toBeUndefined();
-      expect(Object.keys(office.sessions)).toHaveLength(0);
+      expect(catchUpOffice).toEqual(continuousOffice);
+      expect(catchUpOffice.sessions[1001]!.state).toBe("working");
+      expect(catchUpOffice.sessions[1001]!.currentTool).toBe("Bash");
+      expect(catchUpOffice.sessions[1001]!.title).toBe("Fix login bug");
+      expect(catchUpOffice.sessions[1001]!.gitBranch).toBe("feature/login");
     });
   });
 

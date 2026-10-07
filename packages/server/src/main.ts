@@ -11,6 +11,7 @@
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { join, extname } from "node:path";
+import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
 import { reduce, emptyOffice } from "@claude-agent-verse/core";
@@ -18,6 +19,7 @@ import type { Office, DomainEvent } from "@claude-agent-verse/core";
 import { scan, emptyScanSnapshot } from "./scanner.js";
 import type { ScanSnapshot } from "./scanner.js";
 import { generateToken, isAllowedOrigin, isValidToken } from "./auth.js";
+import { FileTailer } from "./tailer.js";
 
 const HOST = "127.0.0.1";
 const PORT = parseInt(process.env.PORT ?? "4800", 10);
@@ -33,6 +35,7 @@ const WEB_DIST = join(__dirname, "..", "..", "web", "dist");
 
 let office: Office = emptyOffice();
 let scanSnapshot: ScanSnapshot = emptyScanSnapshot();
+const tailers = new Map<number, FileTailer>();
 
 // ── MIME types ───────────────────────────────────────────────
 
@@ -132,6 +135,44 @@ function broadcast(data: object): void {
   }
 }
 
+// ── Event dispatch ───────────────────────────────────────────
+
+function dispatch(event: DomainEvent): void {
+  office = reduce(office, event);
+
+  if (event.type === "session_appeared") {
+    const slug = event.cwd.replace(/\//g, "-");
+    const transcriptPath = join(
+      homedir(),
+      ".claude",
+      "projects",
+      slug,
+      `${event.sessionId}.jsonl`
+    );
+
+    const tailer = new FileTailer(transcriptPath);
+    tailers.set(event.pid, tailer);
+
+    tailer.on("line", (line) => {
+      dispatch({ type: "transcript_line", pid: event.pid, line });
+    });
+
+    tailer.start().catch((err) => {
+      console.error(`[tailer] Failed to start tailing for pid ${event.pid}:`, err);
+    });
+  } else if (event.type === "session_ended") {
+    const tailer = tailers.get(event.pid);
+    if (tailer) {
+      tailer.stop();
+      tailers.delete(event.pid);
+    }
+  }
+
+  // We should debounce broadcasts or just broadcast on every state change.
+  // We'll broadcast immediately for now.
+  broadcast({ type: "snapshot", office });
+}
+
 // ── Poll loop ────────────────────────────────────────────────
 
 async function poll(): Promise<void> {
@@ -139,14 +180,8 @@ async function poll(): Promise<void> {
     const result = await scan(scanSnapshot);
     scanSnapshot = result.snapshot;
 
-    if (result.events.length > 0) {
-      // Apply events through the reducer.
-      for (const event of result.events) {
-        office = reduce(office, event);
-      }
-
-      // Push updates to all connected browsers.
-      broadcast({ type: "snapshot", office });
+    for (const event of result.events) {
+      dispatch(event);
     }
   } catch (err) {
     console.error("[poll] Error scanning sessions:", err);

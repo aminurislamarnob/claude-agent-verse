@@ -16,7 +16,8 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import type { DomainEvent, AgentState } from "@claude-agent-verse/core";
+import type { DomainEvent } from "@claude-agent-verse/core";
+import { getProjectKey } from "./projectKey.js";
 
 /** Raw shape of a Claude Code session registry entry. */
 interface RawSessionEntry {
@@ -24,7 +25,6 @@ interface RawSessionEntry {
   sessionId: string;
   cwd: string;
   name?: string;
-  status?: string;
   startedAt?: number;
   // Unknown fields are intentionally ignored (guardrail).
   [key: string]: unknown;
@@ -35,22 +35,8 @@ export interface ScanSnapshot {
   /** Sessions keyed by PID. */
   sessions: Map<
     number,
-    { sessionId: string; cwd: string; name: string; state: AgentState; startedAt: number }
+    { sessionId: string; cwd: string; name: string; startedAt: number }
   >;
-}
-
-/** Derive a project key from the cwd — basename of the directory. */
-function projectKeyFromCwd(cwd: string): string {
-  const parts = cwd.split("/").filter(Boolean);
-  return parts[parts.length - 1] ?? "unknown";
-}
-
-/** Map Claude Code's status string to our AgentState. */
-function mapStatus(status: string | undefined): AgentState {
-  // Claude Code uses: "busy", "idle", "shell", and possibly others.
-  // "busy" → busy; everything else → idle.
-  if (status === "busy") return "busy";
-  return "idle";
 }
 
 /** Check whether a PID is alive. */
@@ -107,7 +93,6 @@ export async function scan(
       // Verify the process is still alive — dead pids are never shown as live.
       if (!isProcessAlive(entry.pid)) continue;
 
-      const state = mapStatus(entry.status);
       const name = entry.name ?? `session-${entry.pid}`;
       const startedAt = entry.startedAt ?? Date.now();
 
@@ -115,7 +100,6 @@ export async function scan(
         sessionId: entry.sessionId,
         cwd: entry.cwd,
         name,
-        state,
         startedAt,
       });
 
@@ -123,23 +107,16 @@ export async function scan(
 
       if (!prevSession) {
         // New session appeared.
+        const projectKey = await getProjectKey(entry.cwd);
         events.push({
           type: "session_appeared",
           pid: entry.pid,
           sessionId: entry.sessionId,
           cwd: entry.cwd,
           name,
-          state,
-          projectKey: projectKeyFromCwd(entry.cwd),
+          projectKey,
           startedAt,
         });
-      } else if (prevSession.state !== state) {
-        // State changed.
-        events.push(
-          state === "busy"
-            ? { type: "session_busy", pid: entry.pid }
-            : { type: "session_idle", pid: entry.pid },
-        );
       }
     } catch {
       // Skip files that can't be read or parsed (guardrail: skip unknown formats).
