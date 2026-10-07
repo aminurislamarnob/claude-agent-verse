@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "tsx src/main.ts",
-    "replay": "tsx src/replay.ts"
+    "replay": "tsx src/replay.ts",
+    "install-hooks": "tsx src/hooks-cli.ts install",
+    "uninstall-hooks": "tsx src/hooks-cli.ts uninstall"
   },
   "dependencies": {
     "@claude-agent-verse/core": "workspace:*",
