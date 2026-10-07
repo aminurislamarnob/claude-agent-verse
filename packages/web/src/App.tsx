@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback, Fragment } from "react";
 import { OfficeScene } from "./OfficeScene";
+import { InspectorPanel } from "./components/InspectorPanel";
 
 // ── Types (subset of @claude-agent-verse/core) ───────────────
 
@@ -14,6 +15,13 @@ export interface Subagent {
   currentTool?: string;
 }
 
+export interface FeedEvent {
+  id: string;
+  role: "user" | "assistant";
+  type: "text" | "tool_use" | "tool_result" | "error";
+  excerpt: string;
+}
+
 export interface Session {
   pid: number;
   sessionId: string;
@@ -26,6 +34,7 @@ export interface Session {
   lastPrompt?: string;
   gitBranch?: string;
   currentTool?: string;
+  feed: FeedEvent[];
   subagents?: Record<string, Subagent>;
 }
 
@@ -209,6 +218,7 @@ function SessionRow({ session }: { session: Session }) {
 
 export function App() {
   const { office, connected } = useOffice();
+  const [focusedAgent, setFocusedAgent] = useState<{pid: number, subagentId?: string} | null>(null);
 
   const sessions = Object.values(office.sessions);
   const byProject = sessions.reduce((acc, s) => {
@@ -221,11 +231,33 @@ export function App() {
 
   useTabTitle(office.waitingCount);
   useFaviconBadge(office.waitingCount);
+  
+  const focusedSession = focusedAgent ? office.sessions[focusedAgent.pid] : null;
+  // Auto-close if session died
+  useEffect(() => {
+    if (focusedAgent && !focusedSession) {
+      setFocusedAgent(null);
+    }
+  }, [focusedSession, focusedAgent]);
 
   return (
     <div className="app-container">
       <div className="diorama-view">
-        <OfficeScene office={office} />
+        <OfficeScene 
+          office={office} 
+          focusedAgent={focusedAgent}
+          onFocusAgent={(pid, subagentId) => setFocusedAgent({ pid, subagentId })}
+        />
+        
+        {focusedSession && (
+          <InspectorPanel 
+            session={focusedSession}
+            focusedSubagentId={focusedAgent?.subagentId}
+            onClose={() => setFocusedAgent(null)}
+            onFocusSubagent={(subId) => setFocusedAgent({ pid: focusedSession.pid, subagentId: subId })}
+            onFocusSession={() => setFocusedAgent({ pid: focusedSession.pid })}
+          />
+        )}
       </div>
       
       <div className="debug-sidebar">
