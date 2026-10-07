@@ -249,6 +249,8 @@ describe("reducer", () => {
         type: "transcript_line",
         pid: 1001,
         line: {
+          uuid: "u1",
+          timestamp: "2024-01-01T00:00:00Z",
           type: "assistant",
           message: {
             content: [
@@ -270,6 +272,8 @@ describe("reducer", () => {
         pid: 1001,
         subagentId: "agent-999",
         line: {
+          uuid: "s1",
+          timestamp: "2024-01-01T00:00:01Z",
           type: "assistant",
           message: { content: [{ type: "tool_use", name: "Editor" }] }
         }
@@ -293,6 +297,8 @@ describe("reducer", () => {
           type: "transcript_line",
           pid: 1001,
           line: {
+            uuid: "u1",
+            timestamp: "2024-01-01T00:00:00Z",
             type: "assistant",
             message: {
               content: [
@@ -314,6 +320,8 @@ describe("reducer", () => {
           pid: 1001,
           subagentId: "agent-999",
           line: {
+            uuid: "s1",
+            timestamp: "2024-01-01T00:00:01Z",
             type: "assistant",
             message: { content: [{ type: "tool_use", name: "Editor" }] }
           }
@@ -326,6 +334,118 @@ describe("reducer", () => {
       expect(catchUpOffice.sessions[1001]!.title).toBe("Fix login bug");
       expect(catchUpOffice.sessions[1001]!.gitBranch).toBe("feature/login");
       expect(catchUpOffice.sessions[1001]!.subagents["agent-999"].state).toBe("working");
+    });
+  });
+
+  describe("waiting_on_user inference", () => {
+    it("transitions to waiting_on_user after threshold", () => {
+      let office = emptyOffice();
+      office = reduce(office, appeared());
+
+      // Start working at T=1000
+      office = reduce(office, {
+        type: "transcript_line",
+        pid: 1001,
+        line: {
+          timestamp: new Date(1000).toISOString(),
+          type: "assistant",
+          message: {
+            content: [
+              { type: "tool_use", name: "Bash", id: "tool_1" }
+            ]
+          }
+        }
+      });
+
+      expect(office.sessions[1001]!.state).toBe("working");
+      expect(office.waitingCount).toBe(0);
+
+      // Tick before threshold (T=2000)
+      office = reduce(office, { type: "tick", now: 2000 });
+      expect(office.sessions[1001]!.state).toBe("working");
+      expect(office.waitingCount).toBe(0);
+
+      // Tick after threshold (T=17000)
+      office = reduce(office, { type: "tick", now: 17000 });
+      expect(office.sessions[1001]!.state).toBe("waiting_on_user");
+      expect(office.waitingCount).toBe(1);
+    });
+
+    it("clears waiting state when result arrives", () => {
+      let office = emptyOffice();
+      office = reduce(office, appeared());
+
+      // Start working at T=1000
+      office = reduce(office, {
+        type: "transcript_line",
+        pid: 1001,
+        line: {
+          timestamp: new Date(1000).toISOString(),
+          type: "assistant",
+          message: {
+            content: [
+              { type: "tool_use", name: "Bash", id: "tool_1" }
+            ]
+          }
+        }
+      });
+
+      // Tick after threshold
+      office = reduce(office, { type: "tick", now: 17000 });
+      expect(office.sessions[1001]!.state).toBe("waiting_on_user");
+
+      // Result arrives
+      office = reduce(office, {
+        type: "transcript_line",
+        pid: 1001,
+        line: {
+          timestamp: new Date(18000).toISOString(),
+          type: "user",
+          message: {
+            content: [
+              { type: "tool_result", tool_use_id: "tool_1", is_error: false, content: "Done" }
+            ]
+          }
+        }
+      });
+
+      expect(office.sessions[1001]!.state).toBe("thinking");
+      expect(office.waitingCount).toBe(0);
+    });
+
+    it("applies to subagents as well", () => {
+      let office = emptyOffice();
+      office = reduce(office, appeared());
+      office = reduce(office, {
+        type: "subagent_appeared",
+        pid: 1001,
+        subagentId: "sub-1",
+        agentType: "Coder",
+        description: "",
+        toolUseId: "t1"
+      });
+
+      // Subagent works
+      office = reduce(office, {
+        type: "subagent_transcript_line",
+        pid: 1001,
+        subagentId: "sub-1",
+        line: {
+          timestamp: new Date(1000).toISOString(),
+          type: "assistant",
+          message: {
+            content: [
+              { type: "tool_use", name: "Bash", id: "t2" }
+            ]
+          }
+        }
+      });
+
+      // Tick past threshold
+      office = reduce(office, { type: "tick", now: 20000 });
+      
+      expect(office.sessions[1001]!.subagents["sub-1"].state).toBe("waiting_on_user");
+      expect(office.waitingCount).toBe(1);
     });
   });
 

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback, Fragment } from "react";
 
 // ── Types (subset of @claude-agent-verse/core) ───────────────
 
-type AgentState = "working" | "thinking" | "idle" | "error" | "ended";
+type AgentState = "working" | "thinking" | "idle" | "error" | "ended" | "waiting_on_user";
 
 interface Subagent {
   subagentId: string;
@@ -30,12 +30,13 @@ interface Session {
 
 interface Office {
   sessions: Record<number, Session>;
+  waitingCount: number;
 }
 
 // ── WebSocket hook ───────────────────────────────────────────
 
 function useOffice(): { office: Office; connected: boolean } {
-  const [office, setOffice] = useState<Office>({ sessions: {} });
+  const [office, setOffice] = useState<Office>({ sessions: {}, waitingCount: 0 });
   const [connected, setConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout>>();
@@ -89,15 +90,51 @@ function useOffice(): { office: Office; connected: boolean } {
 
 // ── Tab title updater ────────────────────────────────────────
 
-function useTabTitle(sessions: Session[]): void {
+function useTabTitle(waitingCount: number): void {
   useEffect(() => {
-    const count = sessions.length;
-    if (count === 0) {
-      document.title = "Claude Agent Verse — no sessions";
+    if (waitingCount > 0) {
+      document.title = `(${waitingCount}) Agent Verse`;
     } else {
-      document.title = `Claude Agent Verse — ${count} session${count === 1 ? "" : "s"}`;
+      document.title = "Agent Verse";
     }
-  }, [sessions]);
+  }, [waitingCount]);
+}
+
+function useFaviconBadge(waitingCount: number): void {
+  useEffect(() => {
+    let link = document.querySelector("link[rel~='icon']") as HTMLLinkElement;
+    if (!link) {
+      link = document.createElement("link");
+      link.rel = "icon";
+      document.head.appendChild(link);
+    }
+    
+    const canvas = document.createElement("canvas");
+    canvas.width = 32;
+    canvas.height = 32;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    
+    ctx.fillStyle = "#1a1a1e";
+    ctx.fillRect(0, 0, 32, 32);
+    ctx.fillStyle = "#6366f1";
+    ctx.fillRect(6, 6, 20, 20);
+
+    if (waitingCount > 0) {
+      ctx.fillStyle = "#ef4444";
+      ctx.beginPath();
+      ctx.arc(24, 8, 8, 0, 2 * Math.PI);
+      ctx.fill();
+      
+      ctx.fillStyle = "white";
+      ctx.font = "bold 10px sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(waitingCount.toString(), 24, 8);
+    }
+
+    link.href = canvas.toDataURL("image/png");
+  }, [waitingCount]);
 }
 
 // ── Components ───────────────────────────────────────────────
@@ -114,6 +151,9 @@ function getStateDetails(state: AgentState, tool?: string) {
   } else if (state === "error") {
     icon = "❌";
     label = "Error";
+  } else if (state === "waiting_on_user") {
+    icon = "✋";
+    label = "Waiting on you";
   }
   return { icon, label, className: `state-${state}` };
 }
@@ -178,7 +218,8 @@ export function App() {
 
   const projectKeys = Object.keys(byProject).sort();
 
-  useTabTitle(sessions);
+  useTabTitle(office.waitingCount);
+  useFaviconBadge(office.waitingCount);
 
   return (
     <div className="app">
