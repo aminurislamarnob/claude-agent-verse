@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
 import { reduce, emptyOffice } from "@claude-agent-verse/core";
 import type { Office, DomainEvent } from "@claude-agent-verse/core";
-import { scan, emptyScanSnapshot } from "./scanner.js";
+import { scan, emptyScanSnapshot, claudeHome } from "./scanner.js";
 import type { ScanSnapshot } from "./scanner.js";
 import { generateToken, isAllowedOrigin, isValidToken } from "./auth.js";
 import { FileTailer } from "./tailer.js";
@@ -145,8 +145,7 @@ function dispatch(event: DomainEvent): void {
   if (event.type === "session_appeared") {
     const slug = event.cwd.replace(/\//g, "-");
     const transcriptPath = join(
-      homedir(),
-      ".claude",
+      claudeHome(),
       "projects",
       slug,
       `${event.sessionId}.jsonl`
@@ -199,7 +198,7 @@ async function poll(): Promise<void> {
     // Discover subagents for active sessions
     for (const session of Object.values(office.sessions)) {
       const slug = session.cwd.replace(/\//g, "-");
-      const subagentsDir = join(homedir(), ".claude", "projects", slug, "subagents");
+      const subagentsDir = join(claudeHome(), "projects", slug, "subagents");
       try {
         const files = await readdir(subagentsDir);
         const metaFiles = files.filter(f => f.endsWith(".meta.json"));

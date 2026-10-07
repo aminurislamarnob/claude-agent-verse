@@ -1,0 +1,4 @@
+{"type":"user","timestamp":"2023-10-01T00:00:06.100Z","message":{"role":"user","content":"Sub task"}}
+{"type":"assistant","timestamp":"2023-10-01T00:00:07.000Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"s1","name":"Bash","input":{}}]}}
+{"type":"tool_result","timestamp":"2023-10-01T00:00:08.000Z"}
+{"type":"assistant","timestamp":"2023-10-01T00:00:09.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Finished sub task"}]}}
