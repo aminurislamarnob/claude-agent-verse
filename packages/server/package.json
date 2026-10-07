@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx src/main.ts"
+    "dev": "tsx src/main.ts",
+    "replay": "tsx src/replay.ts"
   },
   "dependencies": {
     "@claude-agent-verse/core": "workspace:*",

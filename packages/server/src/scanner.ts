@@ -39,8 +39,14 @@ export interface ScanSnapshot {
   >;
 }
 
+/** Get the Claude Home directory. */
+export function claudeHome(): string {
+  return process.env.CLAUDE_HOME ?? join(homedir(), ".claude");
+}
+
 /** Check whether a PID is alive. */
 function isProcessAlive(pid: number): boolean {
+  if (process.env.CLAUDE_REPLAY_MODE) return true;
   try {
     process.kill(pid, 0);
     return true;
@@ -51,7 +57,7 @@ function isProcessAlive(pid: number): boolean {
 
 /** Get the sessions directory path. */
 export function sessionsDir(): string {
-  return join(homedir(), ".claude", "sessions");
+  return join(claudeHome(), "sessions");
 }
 
 /**
