@@ -55,45 +55,35 @@ function getStateColor(state: AgentState): string {
   }
 }
 
-function AgentBox({ state, tool, position, isSubagent, onClick }: { state: AgentState; tool?: string; position: [number, number, number]; isSubagent?: boolean; onClick?: (e: any) => void }) {
-  const color = getStateColor(state);
-  const size = isSubagent ? 0.6 : 1.0;
-  
+import { useTransition, a } from '@react-spring/three';
+import { CharacterModel } from './components/CharacterModel';
+import { DeskModel } from './components/DeskModel';
+import { ChairModel } from './components/ChairModel';
+import { LaptopModel } from './components/LaptopModel';
+
+function AgentNode({ state, tool, position, isSubagent, onClick, visible = true }: { state: AgentState; tool?: string; position: [number, number, number]; isSubagent?: boolean; onClick?: (e: any) => void; visible?: boolean }) {
+  // Use a simple scale transition for appear/disappear if we don't want full walk logic
   return (
     <group position={position}>
-      <mesh 
-        position={[0, size / 2, 0]} 
-        onClick={(e) => {
+      <CharacterModel 
+        state={state} 
+        tool={tool} 
+        isSubagent={isSubagent} 
+        onClick={(e: any) => {
           e.stopPropagation();
           onClick?.(e);
         }}
-        onPointerOver={(e) => {
+        onPointerOver={(e: any) => {
           e.stopPropagation();
           document.body.style.cursor = 'pointer';
         }}
-        onPointerOut={(e) => {
+        onPointerOut={(e: any) => {
           e.stopPropagation();
           document.body.style.cursor = 'auto';
         }}
-      >
-        <boxGeometry args={[size, size, size]} />
-        <meshStandardMaterial color={color} />
-      </mesh>
-      {state === "working" && tool && (
-        <Html position={[0, size + 0.5, 0]} center>
-          <div style={{
-            background: "rgba(0,0,0,0.8)",
-            color: "white",
-            padding: "2px 6px",
-            borderRadius: "4px",
-            fontSize: "12px",
-            whiteSpace: "nowrap",
-            pointerEvents: "none"
-          }}>
-            {tool}
-          </div>
-        </Html>
-      )}
+        // Adjust character to face the desk
+        rotation={[0, isSubagent ? Math.PI / 2 : 0, 0]}
+      />
     </group>
   );
 }
@@ -101,32 +91,44 @@ function AgentBox({ state, tool, position, isSubagent, onClick }: { state: Agent
 function Desk({ session, position, onFocusAgent }: { session: Session; position: [number, number, number]; onFocusAgent: (pid: number, subagentId?: string) => void }) {
   const subagents = Object.values(session.subagents || {});
   
+  // Animate subagents appearing/disappearing
+  const subagentTransitions = useTransition(subagents, {
+    keys: (sub) => sub.subagentId,
+    from: { position: [-3, 0, 0], scale: 0 },
+    enter: (sub, i) => ({ position: [-1.2 - (subagents.indexOf(sub) * 0.8), 0, 0.5], scale: 1 }),
+    leave: { position: [-3, 0, 0], scale: 0 },
+    config: { mass: 1, tension: 170, friction: 26 }
+  });
+
   return (
     <group position={position}>
-      {/* Desk Placeholder */}
-      <mesh position={[0, 0.4, 0]}>
-        <boxGeometry args={[2, 0.8, 1.2]} />
-        <meshStandardMaterial color="#4b5563" />
-      </mesh>
+      {/* Desk and Props */}
+      <group position={[0, 0, 0.4]}>
+        <DeskModel scale={1.5} />
+        <LaptopModel position={[0, 0.75, 0]} rotation={[0, Math.PI, 0]} scale={1.2} />
+      </group>
       
+      <ChairModel position={[0, 0, -0.4]} />
+
       {/* Parent Agent */}
-      <AgentBox 
+      <AgentNode 
         state={session.state} 
         tool={session.currentTool} 
-        position={[0, 0.8, -0.2]} 
+        position={[0, 0, -0.4]} 
         onClick={() => onFocusAgent(session.pid)}
       />
       
       {/* Subagents (Interns) */}
-      {subagents.map((sub, i) => (
-        <AgentBox 
-          key={sub.subagentId}
-          state={sub.state} 
-          tool={sub.currentTool} 
-          position={[-1.2 - (i * 0.8), 0.8, 0.5]} 
-          isSubagent 
-          onClick={() => onFocusAgent(session.pid, sub.subagentId)}
-        />
+      {subagentTransitions((styles, sub) => (
+        <a.group position={styles.position as any} scale={styles.scale as any}>
+          <AgentNode 
+            state={sub.state} 
+            tool={sub.currentTool} 
+            position={[0, 0, 0]} 
+            isSubagent 
+            onClick={() => onFocusAgent(session.pid, sub.subagentId)}
+          />
+        </a.group>
       ))}
     </group>
   );
@@ -138,6 +140,15 @@ function ProjectCluster({ projectKey, sessions, position, onFocusAgent }: { proj
   useEffect(() => {
     deskGrid.cleanup(sessions.map(s => s.pid.toString()));
   }, [sessions, deskGrid]);
+
+  // Animate sessions appearing and disappearing
+  const sessionTransitions = useTransition(sessions, {
+    keys: (s) => s.pid,
+    from: { scale: 0, positionY: 5 },
+    enter: { scale: 1, positionY: 0 },
+    leave: { scale: 0, positionY: 5 },
+    config: { mass: 1, tension: 120, friction: 20 }
+  });
 
   return (
     <group position={position}>
@@ -158,10 +169,19 @@ function ProjectCluster({ projectKey, sessions, position, onFocusAgent }: { proj
         {projectKey}
       </Text>
 
-      {sessions.map(s => {
+      {sessionTransitions((styles, s) => {
         const [gx, gz] = deskGrid.get(s.pid.toString());
-        // Spacing desks by 3.5 units
-        return <Desk key={s.pid} session={s} position={[gx * 3.5, 0, gz * 3.5]} onFocusAgent={onFocusAgent} />;
+        return (
+          <a.group 
+            key={s.pid} 
+            position-x={gx * 3.5} 
+            position-z={gz * 3.5} 
+            position-y={styles.positionY} 
+            scale={styles.scale}
+          >
+            <Desk session={s} position={[0, 0, 0]} onFocusAgent={onFocusAgent} />
+          </a.group>
+        );
       })}
     </group>
   );
