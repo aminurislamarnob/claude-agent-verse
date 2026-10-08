@@ -214,7 +214,7 @@ export function Mug({ color = "#f4f2ee", steam = false, ...props }: { color?: st
         <meshStandardMaterial color={color} roughness={0.35} />
       </mesh>
       {steam && (
-        <group ref={wisps}>
+        <group ref={wisps} userData={{ live: true }}>
           {[0, 1, 2].map((i) => (
             <mesh key={i}>
               <sphereGeometry args={[1, 10, 8]} />

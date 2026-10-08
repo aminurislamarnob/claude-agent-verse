@@ -116,7 +116,7 @@ function Ball() {
     if (shadow.current) shadow.current.position.set(m.position.x, TOP + 0.002, m.position.z);
   });
   return (
-    <>
+    <group userData={{ live: true }}>
       <mesh ref={ball} castShadow visible={false}>
         <sphereGeometry args={[0.034, 16, 12]} />
         <meshStandardMaterial color="#ff9447" emissive="#ff8a3d" emissiveIntensity={0.5} roughness={0.35} />
@@ -125,7 +125,7 @@ function Ball() {
         <circleGeometry args={[0.03, 14]} />
         <meshBasicMaterial color="#10213d" transparent opacity={0.35} depthWrite={false} />
       </mesh>
-    </>
+    </group>
   );
 }
 

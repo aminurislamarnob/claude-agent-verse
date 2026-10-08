@@ -7,6 +7,7 @@ import { palette } from "./theme";
 import { posterTexture, screenTexture, skylineTexture, whiteboardTexture, woodTexture } from "./textures";
 import { COFFEE_TABLE, LOUNGE, type FloorPlan } from "./layout";
 import { HighTable, PlayZone } from "./PlayZone";
+import { StaticBatch } from "./StaticBatch";
 
 type GroupProps = ThreeElements["group"];
 
@@ -391,7 +392,7 @@ function Arcade(props: GroupProps) {
       <RoundedBox args={[0.7, 1.75, 0.7]} radius={0.03} position={[0, 0.875, 0]} castShadow receiveShadow>
         <meshStandardMaterial color="#5b6cff" roughness={0.5} />
       </RoundedBox>
-      <mesh position={[0, 1.25, 0.31]} rotation={[-0.25, 0, 0]}>
+      <mesh position={[0, 1.25, 0.31]} rotation={[-0.25, 0, 0]} userData={{ live: true }}>
         <planeGeometry args={[0.52, 0.42]} />
         <meshBasicMaterial ref={ref} color="#8b5cf6" toneMapped={false} />
       </mesh>
@@ -575,9 +576,10 @@ export function Room({ plan }: { plan: FloorPlan }) {
   });
 
   const sideLen = plan.maxZ + 1 - bz;
+  const layout = `${lx},${right},${bz},${plan.maxZ},${plan.amenities.zones.map((z) => z.kind).join()}`;
 
   return (
-    <group>
+    <StaticBatch version={layout}>
       <Floor plan={plan} />
       <Walls plan={plan} />
       {zones}
@@ -591,6 +593,6 @@ export function Room({ plan }: { plan: FloorPlan }) {
         {sideLen > 10 && <BeanBag position={[0.75, 0, bz + 5.6]} rotation={[0, 1.2, 0]} color="#8a93a6" />}
         {sideLen > 13 && <FloorPlant position={[0.25, 0, plan.maxZ + 0.3]} size={1.1} pot={palette.potDark} />}
       </group>
-    </group>
+    </StaticBatch>
   );
 }

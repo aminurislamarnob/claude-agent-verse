@@ -6,6 +6,7 @@ import { useFrame, useThree, type ThreeElements, type ThreeEvent } from "@react-
 import type { AgentState, Session, Subagent } from "../types";
 import { Character, STAND_HEIGHT, type Activity, type Stance } from "./Character";
 import { BreakPresence } from "./breaks";
+import { StaticBatch } from "./StaticBatch";
 import type { BreakSpot, Point } from "./layout";
 import { DeskLamp, DeskPlant, Display, Headphones, Laptop, MechanicalKeyboard, Mouse, Mug, Notebooks, OfficeChair } from "./Props";
 import { hash, lookFor, palette, stateColor, stateLabel } from "./theme";
@@ -338,34 +339,36 @@ export function Workstation({
 
   return (
     <group>
-      <Desk accent={accent} occupied={lit} />
+      <StaticBatch version={`${deskKey}|${kind}|${state}|${seated && !!session}`}>
+        <Desk accent={accent} occupied={lit} />
 
-      {/* main display, angled so the camera can read it */}
-      <Display
-        position={[-0.5, DESK_TOP, 0.66]}
-        rotation={[0, 1.75, 0]}
-        kind={lit ? kind : "dashboard"}
-        variant={deskKey}
-        scroll={state === "working"}
-        tint={lit ? screenTint[state!] : "#2a2c33"}
-      />
-      <Laptop
-        position={[0.38, DESK_TOP, 0.62]}
-        rotation={[0, Math.PI + 0.35, 0]}
-        kind={sideKind}
-        variant={deskKey + "lt"}
-        angle={lit ? 1.85 : 0.05}
-      />
-      <MechanicalKeyboard position={[-0.04, DESK_TOP, 0.36]} accent={accent} />
-      <Mouse position={[0.27, DESK_TOP, 0.38]} />
-      <Mug position={[0.62, DESK_TOP, 0.32]} color={decor % 2 ? "#f4f2ee" : accent} steam={state === "working" || state === "thinking"} />
-      {decor === 0 && <DeskPlant position={[-0.62, DESK_TOP, 0.88]} />}
-      {decor === 1 && <DeskLamp position={[-0.64, DESK_TOP, 0.86]} rotation={[0, -0.6, 0]} on={lit} />}
-      {decor === 2 && <Notebooks position={[0.58, DESK_TOP, 0.82]} />}
-      {decor === 3 && !look.headphones && <Headphones position={[0.6, DESK_TOP, 0.84]} rotation={[0, 0.4, 0]} />}
-      {decor === 3 && look.headphones && <DeskPlant position={[0.62, DESK_TOP, 0.86]} pot={palette.potDark} />}
+        {/* main display, angled so the camera can read it */}
+        <Display
+          position={[-0.5, DESK_TOP, 0.66]}
+          rotation={[0, 1.75, 0]}
+          kind={lit ? kind : "dashboard"}
+          variant={deskKey}
+          scroll={state === "working"}
+          tint={lit ? screenTint[state!] : "#2a2c33"}
+        />
+        <Laptop
+          position={[0.38, DESK_TOP, 0.62]}
+          rotation={[0, Math.PI + 0.35, 0]}
+          kind={sideKind}
+          variant={deskKey + "lt"}
+          angle={lit ? 1.85 : 0.05}
+        />
+        <MechanicalKeyboard position={[-0.04, DESK_TOP, 0.36]} accent={accent} />
+        <Mouse position={[0.27, DESK_TOP, 0.38]} />
+        <Mug position={[0.62, DESK_TOP, 0.32]} color={decor % 2 ? "#f4f2ee" : accent} steam={state === "working" || state === "thinking"} />
+        {decor === 0 && <DeskPlant position={[-0.62, DESK_TOP, 0.88]} />}
+        {decor === 1 && <DeskLamp position={[-0.64, DESK_TOP, 0.86]} rotation={[0, -0.6, 0]} on={lit} />}
+        {decor === 2 && <Notebooks position={[0.58, DESK_TOP, 0.82]} />}
+        {decor === 3 && !look.headphones && <Headphones position={[0.6, DESK_TOP, 0.84]} rotation={[0, 0.4, 0]} />}
+        {decor === 3 && look.headphones && <DeskPlant position={[0.62, DESK_TOP, 0.86]} pot={palette.potDark} />}
 
-      <OfficeChair position={[0, 0, session && seated ? -0.14 : 0.08]} rotation={[0, session && seated ? 0 : 0.35, 0]} />
+        <OfficeChair position={[0, 0, session && seated ? -0.14 : 0.08]} rotation={[0, session && seated ? 0 : 0.35, 0]} />
+      </StaticBatch>
 
       {session && (
         <Commuter

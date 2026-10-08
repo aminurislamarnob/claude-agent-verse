@@ -633,6 +633,13 @@ describe("reducer", () => {
     });
   });
 
+  describe("tick", () => {
+    it("returns the same office when nothing changed, so the server can skip the broadcast", () => {
+      const office = officeWith(appeared(), { type: "tick", now: 1700000001000 });
+      expect(reduce(office, { type: "tick", now: 1700000002000 })).toBe(office);
+    });
+  });
+
   describe("unknown event types", () => {
     it("are silently skipped", () => {
       const office = officeWith(appeared());

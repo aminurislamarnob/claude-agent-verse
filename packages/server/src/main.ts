@@ -169,6 +169,7 @@ function dispatch(event: DomainEvent): void {
     }
   }
 
+  const before = office;
   office = reduce(office, event);
 
   if (event.type === "session_appeared") {
@@ -190,7 +191,19 @@ function dispatch(event: DomainEvent): void {
     stopSubagents(event.pid);
   }
 
-  broadcast({ type: "snapshot", office });
+  // The reducer returns the same Office when nothing changed (most ticks); skip those.
+  if (office !== before) scheduleSnapshot();
+}
+
+let snapshotTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Coalesces bursts (a transcript replayed at startup) into one snapshot per 100ms. */
+function scheduleSnapshot(): void {
+  if (snapshotTimer) return;
+  snapshotTimer = setTimeout(() => {
+    snapshotTimer = null;
+    broadcast({ type: "snapshot", office });
+  }, 100);
 }
 
 function tailTranscript(pid: number, cwd: string, sessionId: string): void {
