@@ -179,6 +179,17 @@ function computeOfficeState(office: Office, now?: number): Office {
     let sessionChanged = false;
     let nextSession = { ...session };
 
+    // The registry knows whether the session is busy; the transcript only refines how.
+    if (nextSession.registryStatus === "idle" && !nextSession.hookWaiting && nextSession.state !== "idle") {
+      nextSession.state = "idle";
+      nextSession.currentTool = undefined;
+      nextSession.toolStartedAt = undefined;
+      sessionChanged = true;
+    } else if (nextSession.registryStatus === "busy" && nextSession.state === "idle") {
+      nextSession.state = "thinking";
+      sessionChanged = true;
+    }
+
     // Check parent session
     if (now !== undefined && nextSession.state === "working" && nextSession.toolStartedAt) {
       if (now - nextSession.toolStartedAt >= office.waitingThresholdMs) {
@@ -264,6 +275,33 @@ export function reduce(office: Office, event: DomainEvent): Office {
     case "session_ended": {
       const { [event.pid]: _removed, ...rest } = office.sessions;
       next = { ...office, sessions: rest };
+      break;
+    }
+
+    case "session_status": {
+      const session = office.sessions[event.pid];
+      if (!session) break;
+      let nextSession: Session = { ...session };
+      if (event.sessionId && event.sessionId !== session.sessionId) {
+        // A new conversation in the same process: drop what belonged to the old one.
+        nextSession = {
+          ...nextSession,
+          sessionId: event.sessionId,
+          title: undefined,
+          lastPrompt: undefined,
+          currentTool: undefined,
+          toolStartedAt: undefined,
+          feed: [],
+          subagents: {},
+        };
+      }
+      const known = event.status === "busy" || event.status === "idle" ? event.status : undefined;
+      nextSession.registryStatus = known;
+      if (known === "idle" && event.at !== undefined) {
+        nextSession.lastActivityAt = Math.max(nextSession.lastActivityAt ?? 0, event.at);
+      }
+      if (known === "busy") nextSession.onBreak = false;
+      next = { ...office, sessions: { ...office.sessions, [event.pid]: nextSession } };
       break;
     }
 

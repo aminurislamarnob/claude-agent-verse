@@ -83,53 +83,55 @@ async function collectWrites(fixtureDir: string, destDir: string): Promise<Write
         }
       }
 
-      // Subagents
-      try {
-        const subagentsDir = join(projPath, "subagents");
-        const subFiles = await readdir(subagentsDir);
-        for (const file of subFiles) {
-          if (file.endsWith(".meta.json")) {
-            const content = await readFile(join(subagentsDir, file), "utf-8");
-            const jsonlContent = await readFile(join(subagentsDir, file.replace(".meta.json", ".jsonl")), "utf-8").catch(() => "");
-            let timestamp = Date.now();
-            const firstLine = jsonlContent.split("\n")[0];
-            if (firstLine) {
-              try {
-                const parsed = JSON.parse(firstLine);
-                if (parsed.timestamp) timestamp = new Date(parsed.timestamp).getTime() - 1;
-              } catch {}
-            }
-            writes.push({
-              timestamp,
-              execute: async () => {
-                const dest = join(destDir, "projects", project, "subagents", file);
-                await mkdir(dirname(dest), { recursive: true });
-                await writeFile(dest, content, "utf-8");
-              },
-            });
-          } else if (file.endsWith(".jsonl")) {
-            const content = await readFile(join(subagentsDir, file), "utf-8");
-            const lines = content.split("\n").filter((l) => l.trim());
-            for (const line of lines) {
-              try {
-                const parsed = JSON.parse(line);
-                let timestamp = Date.now();
-                if (parsed.timestamp) {
-                  timestamp = new Date(parsed.timestamp).getTime();
-                }
-                writes.push({
-                  timestamp,
-                  execute: async () => {
-                    const dest = join(destDir, "projects", project, "subagents", file);
-                    await mkdir(dirname(dest), { recursive: true });
-                    await appendFile(dest, line + "\n", "utf-8");
-                  },
-                });
-              } catch {}
+      // Subagents live beside each session transcript: <project>/<sessionId>/subagents
+      for (const sessionDir of files.filter((f) => !f.endsWith(".jsonl"))) {
+        try {
+          const subagentsDir = join(projPath, sessionDir, "subagents");
+          const subFiles = await readdir(subagentsDir);
+          for (const file of subFiles) {
+            if (file.endsWith(".meta.json")) {
+              const content = await readFile(join(subagentsDir, file), "utf-8");
+              const jsonlContent = await readFile(join(subagentsDir, file.replace(".meta.json", ".jsonl")), "utf-8").catch(() => "");
+              let timestamp = Date.now();
+              const firstLine = jsonlContent.split("\n")[0];
+              if (firstLine) {
+                try {
+                  const parsed = JSON.parse(firstLine);
+                  if (parsed.timestamp) timestamp = new Date(parsed.timestamp).getTime() - 1;
+                } catch {}
+              }
+              writes.push({
+                timestamp,
+                execute: async () => {
+                  const dest = join(destDir, "projects", project, sessionDir, "subagents", file);
+                  await mkdir(dirname(dest), { recursive: true });
+                  await writeFile(dest, content, "utf-8");
+                },
+              });
+            } else if (file.endsWith(".jsonl")) {
+              const content = await readFile(join(subagentsDir, file), "utf-8");
+              const lines = content.split("\n").filter((l) => l.trim());
+              for (const line of lines) {
+                try {
+                  const parsed = JSON.parse(line);
+                  let timestamp = Date.now();
+                  if (parsed.timestamp) {
+                    timestamp = new Date(parsed.timestamp).getTime();
+                  }
+                  writes.push({
+                    timestamp,
+                    execute: async () => {
+                      const dest = join(destDir, "projects", project, sessionDir, "subagents", file);
+                      await mkdir(dirname(dest), { recursive: true });
+                      await appendFile(dest, line + "\n", "utf-8");
+                    },
+                  });
+                } catch {}
+              }
             }
           }
-        }
-      } catch {}
+        } catch {}
+      }
     }
   } catch {}
 

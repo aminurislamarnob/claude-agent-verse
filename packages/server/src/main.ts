@@ -1,12 +1,12 @@
 import { createServer } from "node:http";
-import { readFile, readdir, writeFile, unlink } from "node:fs/promises";
+import { readFile, readdir, stat, writeFile, unlink } from "node:fs/promises";
 import { join, extname } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
 import { reduce, emptyOffice } from "@claude-agent-verse/core";
 import type { Office, DomainEvent } from "@claude-agent-verse/core";
-import { scan, emptyScanSnapshot, claudeHome } from "./scanner.js";
+import { scan, emptyScanSnapshot, claudeHome, projectSlug } from "./scanner.js";
 import type { ScanSnapshot } from "./scanner.js";
 import { generateToken, generateHookToken, isAllowedOrigin, isValidToken, isValidHookToken } from "./auth.js";
 import { FileTailer } from "./tailer.js";
@@ -26,7 +26,9 @@ const WEB_DIST = join(__dirname, "..", "..", "web", "dist");
 
 let office: Office = emptyOffice();
 let scanSnapshot: ScanSnapshot = emptyScanSnapshot();
-const tailers = new Map<number, FileTailer>();
+const tailers = new Map<number, { sessionId: string; tailer: FileTailer }>();
+/** Subagent transcripts untouched for this long belong to finished work and are skipped. */
+const SUBAGENT_STALE_MS = 10 * 60_000;
 const subagentTailers = new Map<string, FileTailer>();
 const finishedSubagents = new Set<string>();
 
@@ -170,45 +172,51 @@ function dispatch(event: DomainEvent): void {
   office = reduce(office, event);
 
   if (event.type === "session_appeared") {
-    const slug = event.cwd.replace(/\//g, "-");
-    const transcriptPath = join(
-      claudeHome(),
-      "projects",
-      slug,
-      `${event.sessionId}.jsonl`
-    );
-
-    const tailer = new FileTailer(transcriptPath);
-    tailers.set(event.pid, tailer);
-
-    tailer.on("line", (line) => {
-      dispatch({ type: "transcript_line", pid: event.pid, line });
-    });
-
-    tailer.start().catch((err) => {
-      console.error(`[tailer] Failed to start tailing for pid ${event.pid}:`, err);
-    });
+    tailTranscript(event.pid, event.cwd, event.sessionId);
+  } else if (event.type === "session_status") {
+    // A new conversation in the same process writes to a new transcript file.
+    const current = tailers.get(event.pid);
+    const session = office.sessions[event.pid];
+    if (session && current && current.sessionId !== event.sessionId) {
+      stopSubagents(event.pid);
+      tailTranscript(event.pid, session.cwd, event.sessionId);
+    }
   } else if (event.type === "session_ended") {
-    const tailer = tailers.get(event.pid);
-    if (tailer) {
-      tailer.stop();
+    const current = tailers.get(event.pid);
+    if (current) {
+      current.tailer.stop();
       tailers.delete(event.pid);
     }
-    // Clean up subagent tailers and finished states
-    for (const [key, subTailer] of subagentTailers.entries()) {
-      if (key.startsWith(`${event.pid}-`)) {
-        subTailer.stop();
-        subagentTailers.delete(key);
-      }
-    }
-    for (const key of finishedSubagents) {
-      if (key.startsWith(`${event.pid}-`)) {
-        finishedSubagents.delete(key);
-      }
-    }
+    stopSubagents(event.pid);
   }
 
   broadcast({ type: "snapshot", office });
+}
+
+function tailTranscript(pid: number, cwd: string, sessionId: string): void {
+  tailers.get(pid)?.tailer.stop();
+  const transcriptPath = join(claudeHome(), "projects", projectSlug(cwd), `${sessionId}.jsonl`);
+  const tailer = new FileTailer(transcriptPath);
+  tailers.set(pid, { sessionId, tailer });
+  tailer.on("line", (line) => {
+    // Lines from a transcript we've since switched away from are stale.
+    if (tailers.get(pid)?.tailer === tailer) dispatch({ type: "transcript_line", pid, line });
+  });
+  tailer.start().catch((err) => {
+    console.error(`[tailer] Failed to start tailing for pid ${pid}:`, err);
+  });
+}
+
+function stopSubagents(pid: number): void {
+  for (const [key, subTailer] of subagentTailers.entries()) {
+    if (key.startsWith(`${pid}-`)) {
+      subTailer.stop();
+      subagentTailers.delete(key);
+    }
+  }
+  for (const key of finishedSubagents) {
+    if (key.startsWith(`${pid}-`)) finishedSubagents.delete(key);
+  }
 }
 
 // ── Poll loop ────────────────────────────────────────────────
@@ -227,8 +235,8 @@ async function poll(): Promise<void> {
 
     // Discover subagents for active sessions
     for (const session of Object.values(office.sessions)) {
-      const slug = session.cwd.replace(/\//g, "-");
-      const subagentsDir = join(claudeHome(), "projects", slug, "subagents");
+      // Subagent transcripts live beside the session's own: projects/<slug>/<sessionId>/subagents
+      const subagentsDir = join(claudeHome(), "projects", projectSlug(session.cwd), session.sessionId, "subagents");
       try {
         const files = await readdir(subagentsDir);
         const metaFiles = files.filter(f => f.endsWith(".meta.json"));
@@ -236,6 +244,12 @@ async function poll(): Promise<void> {
           const subagentId = metaFile.replace("agent-", "").replace(".meta.json", "");
           const key = `${session.pid}-${subagentId}`;
           if (!subagentTailers.has(key) && !finishedSubagents.has(key)) {
+            const jsonlPath = join(subagentsDir, `agent-${subagentId}.jsonl`);
+            const mtime = await stat(jsonlPath).then((s) => s.mtimeMs, () => 0);
+            if (Date.now() - mtime > SUBAGENT_STALE_MS && !process.env.CLAUDE_REPLAY_MODE) {
+              finishedSubagents.add(key);
+              continue;
+            }
             const metaContent = await readFile(join(subagentsDir, metaFile), "utf-8");
             const meta = JSON.parse(metaContent);
 
@@ -248,7 +262,6 @@ async function poll(): Promise<void> {
               toolUseId: meta.toolUseId,
             });
 
-            const jsonlPath = join(subagentsDir, `agent-${subagentId}.jsonl`);
             const tailer = new FileTailer(jsonlPath);
             subagentTailers.set(key, tailer);
 

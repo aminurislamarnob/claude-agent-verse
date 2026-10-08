@@ -26,6 +26,9 @@ interface RawSessionEntry {
   cwd: string;
   name?: string;
   startedAt?: number;
+  /** Claude Code's own activity flag: "busy", "idle", … */
+  status?: string;
+  statusUpdatedAt?: number;
   // Unknown fields are intentionally ignored (guardrail).
   [key: string]: unknown;
 }
@@ -35,8 +38,16 @@ export interface ScanSnapshot {
   /** Sessions keyed by PID. */
   sessions: Map<
     number,
-    { sessionId: string; cwd: string; name: string; startedAt: number }
+    { sessionId: string; cwd: string; name: string; startedAt: number; status?: string; statusUpdatedAt?: number }
   >;
+}
+
+/**
+ * Claude Code's folder name for a working directory under ~/.claude/projects:
+ * every character other than a letter or digit becomes "-".
+ */
+export function projectSlug(cwd: string): string {
+  return cwd.replace(/[^A-Za-z0-9]/g, "-");
 }
 
 /** Get the Claude Home directory. */
@@ -102,11 +113,15 @@ export async function scan(
       const name = entry.name ?? `session-${entry.pid}`;
       const startedAt = entry.startedAt ?? Date.now();
 
+      const status = typeof entry.status === "string" ? entry.status : undefined;
+      const statusUpdatedAt = typeof entry.statusUpdatedAt === "number" ? entry.statusUpdatedAt : undefined;
       next.sessions.set(entry.pid, {
         sessionId: entry.sessionId,
         cwd: entry.cwd,
         name,
         startedAt,
+        status,
+        statusUpdatedAt,
       });
 
       const prevSession = prev.sessions.get(entry.pid);
@@ -123,6 +138,16 @@ export async function scan(
           projectKey,
           startedAt,
         });
+      }
+
+      if (
+        status !== undefined &&
+        (!prevSession ||
+          prevSession.status !== status ||
+          prevSession.statusUpdatedAt !== statusUpdatedAt ||
+          prevSession.sessionId !== entry.sessionId)
+      ) {
+        events.push({ type: "session_status", pid: entry.pid, status, at: statusUpdatedAt, sessionId: entry.sessionId });
       }
     } catch {
       // Skip files that can't be read or parsed (guardrail: skip unknown formats).
