@@ -32,6 +32,8 @@ export interface Session {
   currentTool?: string;
   feed: FeedEvent[];
   subagents?: Record<string, Subagent>;
+  /** Idle long enough that the character has left its desk for the break area. */
+  onBreak?: boolean;
 }
 
 export interface Office {

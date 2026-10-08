@@ -20,6 +20,8 @@ export interface Subagent {
   toolUseId: string;
   state: AgentState;
   currentTool?: string;
+  /** Epoch ms when the current tool started */
+  toolStartedAt?: number;
 }
 
 /**
@@ -58,6 +60,10 @@ export interface Session {
   subagents: Record<string, Subagent>;
   /** Explicit hook waiting state to override transcript inference */
   hookWaiting?: boolean;
+  /** Epoch ms of the latest user or assistant transcript line */
+  lastActivityAt?: number;
+  /** Idle for at least the break threshold: the character leaves its desk */
+  onBreak?: boolean;
 }
 
 /**
@@ -71,6 +77,8 @@ export interface Office {
   waitingCount: number;
   /** Configurable threshold for waiting inference. */
   waitingThresholdMs: number;
+  /** How long a session stays idle before it goes on break. */
+  breakThresholdMs: number;
 }
 
 // ── Domain events ─────────────────────────────────────────────

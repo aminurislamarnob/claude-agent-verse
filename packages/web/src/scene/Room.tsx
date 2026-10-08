@@ -5,7 +5,8 @@ import { RoundedBox } from "@react-three/drei";
 import { DeskPlant, FloorPlant, Mug } from "./Props";
 import { palette } from "./theme";
 import { posterTexture, screenTexture, skylineTexture, whiteboardTexture, woodTexture } from "./textures";
-import type { FloorPlan } from "./layout";
+import { COFFEE_TABLE, type FloorPlan } from "./layout";
+import { HighTable, PlayZone } from "./PlayZone";
 
 type GroupProps = ThreeElements["group"];
 
@@ -509,66 +510,52 @@ export function Room({ plan }: { plan: FloorPlan }) {
   const lx = plan.minX; // left wall interior face
   const right = plan.maxX + 1;
 
-  const zones = useMemo(() => {
-    const list: { w: number; node: (x: number) => React.ReactNode }[] = [
-      {
-        w: 3.2,
-        node: (x) => (
-          <group key="lounge" position={[x, 0, bz]}>
+  const zones = plan.amenities.zones.map(({ kind, x }) => {
+    switch (kind) {
+      case "lounge":
+        return (
+          <group key={kind} position={[x, 0, bz]}>
             <Whiteboard position={[0, 1.75, 0.03]} />
             <Rug w={3.0} d={2.2} position={[0, 0, 1.45]} />
             <Sofa position={[0, 0, 0.62]} />
             <CoffeeTable position={[0.1, 0, 1.75]} />
             <BeanBag position={[1.15, 0, 2.15]} rotation={[0, -0.8, 0]} />
           </group>
-        ),
-      },
-      {
-        w: 2.3,
-        node: (x) => (
-          <group key="screen" position={[x, 0, bz]}>
+        );
+      case "coffee":
+        return (
+          <group key={kind} position={[x, 0, bz]}>
+            <CoffeeBar position={[0, 0, 0.36]} />
+            <HighTable position={[COFFEE_TABLE.x, 0, COFFEE_TABLE.z]} />
+            <Mug position={[COFFEE_TABLE.x + 0.1, 0.857, COFFEE_TABLE.z + 0.08]} color={palette.accent} />
+          </group>
+        );
+      case "play":
+        return <PlayZone key={kind} position={[x, 0, bz]} tableZ={plan.amenities.table.z - bz} />;
+      case "screen":
+        return (
+          <group key={kind} position={[x, 0, bz]}>
             <WallScreen position={[0, 1.65, 0.04]} />
             <Credenza position={[0, 0, 0.3]} />
           </group>
-        ),
-      },
-      {
-        w: 1.6,
-        node: (x) => (
-          <group key="neon" position={[x, 0, bz]}>
+        );
+      case "neon":
+        return (
+          <group key={kind} position={[x, 0, bz]}>
             <NeonSign position={[0, 1.95, 0.03]} />
             <Poster kind="ship" position={[-0.35, 0.95, 0.03]} rotation={[0, 0, 0.02]} />
             <Poster kind="grid" position={[0.38, 0.95, 0.03]} rotation={[0, 0, -0.02]} />
           </group>
-        ),
-      },
-      {
-        w: 2.6,
-        node: (x) => (
-          <group key="coffee" position={[x, 0, bz]}>
-            <CoffeeBar position={[0, 0, 0.36]} />
-          </group>
-        ),
-      },
-      {
-        w: 1.4,
-        node: (x) => (
-          <group key="arcade" position={[x, 0, bz]}>
+        );
+      case "arcade":
+        return (
+          <group key={kind} position={[x, 0, bz]}>
             <Arcade position={[-0.15, 0, 0.42]} />
             <Poster kind="pixel" position={[0.45, 1.7, 0.03]} />
           </group>
-        ),
-      },
-    ];
-    let x = lx + 1.3;
-    const placed: React.ReactNode[] = [];
-    for (const z of list) {
-      if (x + z.w > right - 0.6) break;
-      placed.push(z.node(x + z.w / 2));
-      x += z.w + 0.25;
+        );
     }
-    return placed;
-  }, [bz, lx, right]);
+  });
 
   const sideLen = plan.maxZ + 1 - bz;
 

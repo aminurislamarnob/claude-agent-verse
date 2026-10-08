@@ -464,3 +464,26 @@ export function signTexture(name: string, detail: string, color: string, alert: 
     ctx.fillText(detail, 40, 162);
   });
 }
+
+/** Flip scoreboard for the play zone. */
+export function scoreboardTexture() {
+  return make("scoreboard", 512, 256, (ctx, w, h) => {
+    ctx.fillStyle = "#1d1f24";
+    roundRect(ctx, 0, 0, w, h, 28);
+    ctx.font = "600 30px -apple-system, BlinkMacSystemFont, 'SF Pro Text', Inter, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#868b95";
+    ctx.fillText("BREAK  POINT", w / 2, 40);
+    for (const [i, n] of ["11", "09"].entries()) {
+      const x = 46 + i * 236;
+      ctx.fillStyle = "#2b2e35";
+      roundRect(ctx, x, 70, 184, 150, 16);
+      ctx.fillStyle = i ? "#ff8a5c" : "#f4f2ee";
+      ctx.font = "700 120px 'SF Mono', ui-monospace, Menlo, monospace";
+      ctx.fillText(n, x + 92, 150);
+      ctx.fillStyle = "#1d1f24";
+      ctx.fillRect(x, 144, 184, 4);
+    }
+  });
+}

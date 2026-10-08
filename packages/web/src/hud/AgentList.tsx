@@ -39,7 +39,7 @@ export function AgentList({ office, onSelect, onClose }: { office: Office; onSel
                   <li key={s.pid}>
                     <button className="agent-row" onClick={() => onSelect({ pid: s.pid })}>
                       <span className="agent-row__title">{s.title || s.name}</span>
-                      <StateBadge state={s.state} tool={s.currentTool} compact />
+                      <StateBadge state={s.state} tool={s.currentTool} compact onBreak={s.onBreak} />
                       {s.gitBranch && <span className="agent-row__branch">{s.gitBranch}</span>}
                     </button>
                     {Object.values(s.subagents ?? {}).map((sub) => (

@@ -4,7 +4,8 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Environment, Lightformer, OrbitControls, OrthographicCamera, RoundedBox } from "@react-three/drei";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import type { Office } from "../types";
-import { createAllocators, planFloor, type FloorPlan, type Pod } from "./layout";
+import { createAllocators, planFloor, routeToBreak, type BreakSpot, type FloorPlan, type Pod } from "./layout";
+import { BreakAllocator, BreakPresence } from "./breaks";
 import { BeanBag, Room } from "./Room";
 import { Label, LabelLayer } from "./Label";
 import { FloorPlant } from "./Props";
@@ -19,7 +20,21 @@ const ACTIVE_STATES = new Set(["working", "thinking", "waiting_on_user", "error"
 
 // ── Pods ─────────────────────────────────────────────────────
 
-function PodZone({ pod, focus, onSelect, far }: { pod: Pod; focus: Focus; onSelect: (f: Focus) => void; far: boolean }) {
+function PodZone({
+  pod,
+  plan,
+  breaks,
+  focus,
+  onSelect,
+  far,
+}: {
+  pod: Pod;
+  plan: FloorPlan;
+  breaks: Map<number, BreakSpot>;
+  focus: Focus;
+  onSelect: (f: Focus) => void;
+  far: boolean;
+}) {
   const accent = teamColor(pod.projectKey);
   const carpet = useMemo(() => new THREE.Color(palette.rug).lerp(new THREE.Color(accent), 0.13), [accent]);
   const live = pod.desks.filter((d) => d.session).length;
@@ -38,11 +53,15 @@ function PodZone({ pod, focus, onSelect, far }: { pod: Pod; focus: Focus; onSele
       {pod.nooks.map((n, i) => (
         <Nook key={i} x={n.x} z={n.z} seed={i + pod.projectKey.length} />
       ))}
-      {pod.desks.map((d) => (
-        <group key={d.key} position={[d.x, 0, d.z]}>
-          <Workstation session={d.session} accent={accent} focus={focus} onSelect={onSelect} deskKey={d.key} />
-        </group>
-      ))}
+      {pod.desks.map((d) => {
+        const spot = d.session ? breaks.get(d.session.pid) ?? null : null;
+        const route = spot ? routeToBreak(plan, { x: d.x, z: d.z, podX: pod.x }, spot) : null;
+        return (
+          <group key={d.key} position={[d.x, 0, d.z]}>
+            <Workstation session={d.session} accent={accent} focus={focus} onSelect={onSelect} deskKey={d.key} origin={d} route={route} spot={spot} />
+          </group>
+        );
+      })}
     </group>
   );
 }
@@ -137,8 +156,10 @@ function frameRoom(plan: FloorPlan, width: number, height: number, inset: { righ
   return { zoom, target: center.applyMatrix4(cam.matrixWorld), cam };
 }
 
-function focusPoint(plan: FloorPlan, focus: Focus): THREE.Vector3 | null {
+function focusPoint(plan: FloorPlan, focus: Focus, breaks: Map<number, BreakSpot>): THREE.Vector3 | null {
   if (!focus) return null;
+  const spot = !focus.subagentId && breaks.get(focus.pid);
+  if (spot) return new THREE.Vector3(spot.x, 1.0, spot.z);
   for (const pod of plan.pods)
     for (const d of pod.desks) {
       if (d.session?.pid !== focus.pid) continue;
@@ -151,7 +172,7 @@ function focusPoint(plan: FloorPlan, focus: Focus): THREE.Vector3 | null {
   return null;
 }
 
-function CameraRig({ plan, focus, insetRight }: { plan: FloorPlan; focus: Focus; insetRight: number }) {
+function CameraRig({ plan, breaks, focus, insetRight }: { plan: FloorPlan; breaks: Map<number, BreakSpot>; focus: Focus; insetRight: number }) {
   const { camera, size, controls, invalidate } = useThree() as unknown as {
     camera: THREE.OrthographicCamera;
     size: { width: number; height: number };
@@ -161,10 +182,10 @@ function CameraRig({ plan, focus, insetRight }: { plan: FloorPlan; focus: Focus;
   const goal = useRef<{ target: THREE.Vector3; zoom: number } | null>(null);
   const frame = frameRoom(plan, size.width, size.height, { right: insetRight, top: 72 });
   const boundsKey = `${plan.minX},${plan.maxX},${plan.minZ},${plan.maxZ},${size.width},${size.height},${insetRight}`;
-  const focusKey = focus ? `${focus.pid}:${focus.subagentId ?? ""}` : "";
+  const focusKey = focus ? `${focus.pid}:${focus.subagentId ?? ""}:${breaks.get(focus.pid)?.id ?? ""}` : "";
 
   useEffect(() => {
-    const p = focusPoint(plan, focus);
+    const p = focusPoint(plan, focus, breaks);
     if (!p) {
       goal.current = { target: frame.target, zoom: frame.zoom };
     } else {
@@ -291,6 +312,9 @@ export function OfficeScene({
 }) {
   const allocators = useRef(createAllocators());
   const plan = useMemo(() => planFloor(office, allocators.current), [office]);
+  const breakAlloc = useRef(new BreakAllocator());
+  const breaks = useMemo(() => breakAlloc.current.sync(Object.values(office.sessions), plan.amenities.spots), [office, plan]);
+  const presence = useMemo(() => new Set<string>(), []);
 
   const [visible, setVisible] = useState(document.visibilityState === "visible");
   useEffect(() => {
@@ -302,7 +326,9 @@ export function OfficeScene({
   const busy = Object.values(office.sessions).some(
     (s) => ACTIVE_STATES.has(s.state) || Object.values(s.subagents ?? {}).some((a) => ACTIVE_STATES.has(a.state)),
   );
-  const fps = !visible ? 0 : busy ? 30 : 10;
+  // a rally needs smooth frames; coffee chat is fine at the idle rate
+  const rally = [...breaks.values()].some((s) => s.activity === "pingpong");
+  const fps = !visible ? 0 : busy || rally ? 30 : 10;
   const [far, setFar] = useState(true);
   const center = roomCenter(plan);
 
@@ -331,15 +357,17 @@ export function OfficeScene({
           maxZoom={260}
           screenSpacePanning
         />
-        <CameraRig plan={plan} focus={focus} insetRight={insetRight} />
+        <CameraRig plan={plan} breaks={breaks} focus={focus} insetRight={insetRight} />
         <FrameDriver fps={fps} />
         <ShadowBudget version={office} />
         <ZoomWatcher threshold={72} onChange={setFar} />
         <Lights plan={plan} />
-        <Room plan={plan} />
-        {plan.pods.map((pod) => (
-          <PodZone key={pod.projectKey} pod={pod} focus={focus} onSelect={onSelect} far={far} />
-        ))}
+        <BreakPresence.Provider value={presence}>
+          <Room plan={plan} />
+          {plan.pods.map((pod) => (
+            <PodZone key={pod.projectKey} pod={pod} plan={plan} breaks={breaks} focus={focus} onSelect={onSelect} far={far} />
+          ))}
+        </BreakPresence.Provider>
       </Canvas>
     </LabelLayer.Provider>
   );
