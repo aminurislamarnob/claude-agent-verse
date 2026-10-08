@@ -224,7 +224,8 @@ function Commuter({
   const [arrived, setArrived] = useState(!!spot);
   const dir = useMemo(() => new THREE.Vector2(0, 1), []);
 
-  useEffect(() => onSeated(stance === "seated"), [stance, onSeated]);
+  // Only a seat at the desk pulls the desk chair back; the sofa doesn't.
+  useEffect(() => onSeated(stance === "seated" && !arrived), [stance, arrived, onSeated]);
   useEffect(
     () => () => {
       if (present.current) presence.delete(present.current);
@@ -248,7 +249,7 @@ function Commuter({
       } else if (s < length) {
         s = Math.min(length, s + WALK * d);
         next = "walking";
-      } else next = "standing";
+      } else next = spot.seat !== undefined ? "seated" : "standing";
     } else {
       hold.current = 0;
       if (s > 0) {
@@ -262,7 +263,7 @@ function Commuter({
     const p = pointAt(path, s, _a, dir);
     const atSpot = away && s >= length;
     const yaw = next === "walking" ? Math.atan2(dir.x, dir.y) : next === "running" ? Math.atan2(-dir.x, -dir.y) : atSpot ? spot!.facing : 0;
-    const y = next === "seated" ? SEAT : STAND_Y;
+    const y = next === "seated" ? (atSpot && spot!.seat !== undefined ? spot!.seat : SEAT) : STAND_Y;
     if (first.current) {
       first.current = false;
       g.position.y = y;
@@ -286,7 +287,11 @@ function Commuter({
   });
 
   const activity: Activity | undefined =
-    arrived && spot ? (spot.activity === "pingpong" ? { kind: "pingpong", side: spot.id.endsWith("1") ? 1 : 0 } : { kind: "coffee" }) : undefined;
+    arrived && spot
+      ? spot.activity === "pingpong"
+        ? { kind: "pingpong", side: spot.id.endsWith("1") ? 1 : 0 }
+        : { kind: spot.activity }
+      : undefined;
 
   return (
     <group ref={group} {...props}>

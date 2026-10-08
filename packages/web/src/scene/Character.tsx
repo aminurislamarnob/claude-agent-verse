@@ -11,7 +11,7 @@ import { rallyHit } from "./breaks";
 // Origin is the hip line (the seat surface when seated); the character faces +z.
 
 export type Stance = "seated" | "standing" | "walking" | "running";
-export type Activity = { kind: "pingpong"; side: 0 | 1 } | { kind: "coffee" };
+export type Activity = { kind: "pingpong"; side: 0 | 1 } | { kind: "coffee" } | { kind: "lounge" };
 /** Hip line to sole when standing straight, in character units. */
 export const STAND_HEIGHT = 0.578;
 
@@ -43,8 +43,9 @@ const EXPRESSION: Record<AgentState, Expression> = {
 };
 
 /** Standing poses for break activities. Same shape as POSES; legs straight. */
-const STANDING: Record<"idle" | "pingpong" | "coffee", Pose> = {
+const STANDING: Record<Activity["kind"] | "idle", Pose> = {
   idle: { lean: 0, head: [0, 0, 0], l: [0.05, -0.1, -0.15], r: [0.05, 0.1, -0.15] },
+  lounge: { lean: 0, head: [0, 0, 0], l: [0.05, -0.1, -0.15], r: [0.05, 0.1, -0.15] },
   pingpong: { lean: 0.16, head: [0.1, 0, 0], l: [-0.55, -0.25, -1.0], r: [-0.85, 0.3, -0.7] },
   coffee: { lean: -0.02, head: [-0.05, 0, 0], l: [-0.5, 0.32, -1.55], r: [0.08, 0.12, -0.25] },
 };

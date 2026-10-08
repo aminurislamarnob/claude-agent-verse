@@ -5,7 +5,7 @@ import { RoundedBox } from "@react-three/drei";
 import { DeskPlant, FloorPlant, Mug } from "./Props";
 import { palette } from "./theme";
 import { posterTexture, screenTexture, skylineTexture, whiteboardTexture, woodTexture } from "./textures";
-import { COFFEE_TABLE, type FloorPlan } from "./layout";
+import { COFFEE_TABLE, LOUNGE, type FloorPlan } from "./layout";
 import { HighTable, PlayZone } from "./PlayZone";
 
 type GroupProps = ThreeElements["group"];
@@ -517,9 +517,11 @@ export function Room({ plan }: { plan: FloorPlan }) {
           <group key={kind} position={[x, 0, bz]}>
             <Whiteboard position={[0, 1.75, 0.03]} />
             <Rug w={3.0} d={2.2} position={[0, 0, 1.45]} />
-            <Sofa position={[0, 0, 0.62]} />
-            <CoffeeTable position={[0.1, 0, 1.75]} />
-            <BeanBag position={[1.15, 0, 2.15]} rotation={[0, -0.8, 0]} />
+            <Sofa position={[LOUNGE.sofa.x, 0, LOUNGE.sofa.z]} />
+            <CoffeeTable position={[LOUNGE.table.x, 0, LOUNGE.table.z]} />
+            {LOUNGE.poufs.map((p, i) => (
+              <BeanBag key={i} position={[p.x, 0, p.z]} rotation={[0, -0.8, 0]} color={i ? "#d9a066" : "#8a93a6"} />
+            ))}
           </group>
         );
       case "coffee":
