@@ -11,7 +11,7 @@ import { rallyHit } from "./breaks";
 // Origin is the hip line (the seat surface when seated); the character faces +z.
 
 export type Stance = "seated" | "standing" | "walking" | "running";
-export type Activity = { kind: "pingpong"; side: 0 | 1 } | { kind: "coffee" } | { kind: "lounge" };
+export type Activity = { kind: "pingpong"; side: 0 | 1 } | { kind: "coffee" } | { kind: "lounge"; sprawl?: boolean };
 /** Hip line to sole when standing straight, in character units. */
 export const STAND_HEIGHT = 0.578;
 
@@ -267,7 +267,11 @@ export function Character({
       const phase = Math.sin(g + i * Math.PI);
       let h = 0;
       let kn = 0;
-      if (seated) {
+      if (seated && activity?.kind === "lounge" && activity.sprawl) {
+        // sunk into a bean bag: knees up a little, legs stretched out
+        h = -1.75 - i * 0.12;
+        kn = 1.0 + i * 0.1;
+      } else if (seated) {
         h = -Math.PI / 2;
         kn = Math.PI / 2;
       } else if (moving) {
@@ -285,7 +289,8 @@ export function Character({
     if (torso.current) {
       const breathe = Math.sin(t * 1.6) * 0.012;
       const bounce = state === "waiting_on_user" && seated ? Math.abs(Math.sin(t * 5)) * 0.03 : 0;
-      const lean = running ? 0.32 : stance === "walking" ? 0.06 : pose.lean;
+      const sprawl = seated && activity?.kind === "lounge" && activity.sprawl ? -0.22 : 0;
+      const lean = running ? 0.32 : stance === "walking" ? 0.06 : pose.lean + sprawl;
       torso.current.rotation.x = damp(torso.current.rotation.x, lean + breathe, k, d);
       torso.current.rotation.y = damp(torso.current.rotation.y, moving ? gait * 0.12 : hit * 0.35, k, d);
       torso.current.position.y = damp(torso.current.position.y, bounce, k, d);

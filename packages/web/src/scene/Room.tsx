@@ -157,25 +157,40 @@ function CoffeeTable(props: GroupProps) {
   );
 }
 
-/** Knit pouf: soft cylinder with a piped top edge. */
+let beanBagGeo: THREE.BufferGeometry | null = null;
+
+/**
+ * A slumped bean bag: wide at the floor, a raised back, a hollow to sink into and
+ * soft creases. Built once by reshaping a sphere. Local +z is the sitter's front.
+ */
+function beanBagGeometry() {
+  if (beanBagGeo) return beanBagGeo;
+  const g = new THREE.SphereGeometry(1, 64, 40);
+  const pos = g.attributes.position;
+  const v = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i);
+    const { x, y, z } = v;
+    const back = THREE.MathUtils.smoothstep(-z, -0.2, 0.9); // 0 at the front, 1 at the back
+    const side = THREE.MathUtils.smoothstep(Math.abs(x), 0.35, 0.95); // sides hug the sitter
+    let h = y > 0 ? y * (0.5 + 0.6 * back + 0.3 * side * (1 - back * 0.5)) : y * 0.5;
+    h -= 0.3 * Math.exp(-((x / 0.5) ** 2) - ((z - 0.2) / 0.5) ** 2) * Math.max(0, y); // seat hollow
+    h = Math.max(h, -0.42); // flat where it rests on the floor
+    const slump = 1 + 0.2 * (1 - y) * 0.5; // spreads out toward the floor
+    const crease = 0.03 * Math.sin(7 * Math.atan2(z, x) + y * 4) * (1 - Math.abs(y)) * (0.4 + back);
+    const r = 0.5 * (slump + crease);
+    pos.setXYZ(i, x * r, (h + 0.42) * 0.42, z * r);
+  }
+  g.computeVertexNormals();
+  return (beanBagGeo = g);
+}
+
 export function BeanBag({ color = "#d9a066", ...props }: { color?: string } & GroupProps) {
+  const sheen = useMemo(() => new THREE.Color(color).lerp(new THREE.Color("#ffffff"), 0.35), [color]);
   return (
     <group {...props}>
-      <mesh position={[0, 0.17, 0]} castShadow receiveShadow>
-        <cylinderGeometry args={[0.27, 0.25, 0.3, 36]} />
-        <meshStandardMaterial color={color} roughness={1} />
-      </mesh>
-      <mesh position={[0, 0.32, 0]} scale={[1, 0.18, 1]} castShadow>
-        <sphereGeometry args={[0.27, 36, 16, 0, Math.PI * 2, 0, Math.PI / 2]} />
-        <meshStandardMaterial color={color} roughness={1} />
-      </mesh>
-      <mesh position={[0, 0.32, 0]} rotation={[Math.PI / 2, 0, 0]}>
-        <torusGeometry args={[0.268, 0.012, 8, 40]} />
-        <meshStandardMaterial color={new THREE.Color(color).multiplyScalar(0.85)} roughness={1} />
-      </mesh>
-      <mesh position={[0, 0.33, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <circleGeometry args={[0.03, 16]} />
-        <meshStandardMaterial color={new THREE.Color(color).multiplyScalar(0.8)} roughness={1} />
+      <mesh geometry={beanBagGeometry()} castShadow receiveShadow>
+        <meshPhysicalMaterial color={color} roughness={0.92} sheen={1} sheenColor={sheen} sheenRoughness={0.45} />
       </mesh>
     </group>
   );
@@ -519,8 +534,8 @@ export function Room({ plan }: { plan: FloorPlan }) {
             <Rug w={3.0} d={2.2} position={[0, 0, 1.45]} />
             <Sofa position={[LOUNGE.sofa.x, 0, LOUNGE.sofa.z]} />
             <CoffeeTable position={[LOUNGE.table.x, 0, LOUNGE.table.z]} />
-            {LOUNGE.poufs.map((p, i) => (
-              <BeanBag key={i} position={[p.x, 0, p.z]} rotation={[0, -0.8, 0]} color={i ? "#d9a066" : "#8a93a6"} />
+            {LOUNGE.beanBags.map((p, i) => (
+              <BeanBag key={i} position={[p.x, 0, p.z]} rotation={[0, p.facing, 0]} color={i ? "#d9a066" : "#8a93a6"} />
             ))}
           </group>
         );

@@ -31,11 +31,12 @@ export const COFFEE_TABLE = { x: 0.55, z: 1.8 };
 export const LOUNGE = {
   sofa: { x: 0, z: 0.62, seat: 0.55, seats: [-0.6, 0, 0.6] },
   table: { x: 0.1, z: 1.75 },
-  poufs: [
+  beanBags: [
     { x: -1.0, z: 2.25, facing: 0.5 },
     { x: 1.15, z: 2.15, facing: 0.9 },
   ],
-  poufSeat: 0.4,
+  /** Top of the bean bag's hollow; matches BeanBag's geometry. */
+  beanBagSeat: 0.27,
 };
 
 function planAmenities(maxX: number): Amenities {
@@ -95,13 +96,13 @@ function planAmenities(maxX: number): Amenities {
           ],
         };
       }),
-      ...LOUNGE.poufs.map((p, i) => ({
-        id: `lounge-pouf-${i}`,
+      ...LOUNGE.beanBags.map((p, i) => ({
+        id: `lounge-beanbag-${i}`,
         activity: "lounge" as const,
         x: lounge + p.x,
         z: bz + p.z,
         facing: p.facing,
-        seat: LOUNGE.poufSeat,
+        seat: LOUNGE.beanBagSeat,
       })),
     ],
   };

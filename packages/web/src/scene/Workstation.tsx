@@ -290,7 +290,9 @@ function Commuter({
     arrived && spot
       ? spot.activity === "pingpong"
         ? { kind: "pingpong", side: spot.id.endsWith("1") ? 1 : 0 }
-        : { kind: spot.activity }
+        : spot.activity === "lounge"
+          ? { kind: "lounge", sprawl: spot.id.includes("beanbag") }
+          : { kind: spot.activity }
       : undefined;
 
   return (
