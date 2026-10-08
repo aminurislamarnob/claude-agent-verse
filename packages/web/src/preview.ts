@@ -4,6 +4,11 @@ import type { AgentState, Office, Session, Subagent } from "./types";
 // `?preview` renders a synthetic office that shows every Agent State at once,
 // so the scene can be reviewed without live sessions. It never touches the server.
 
+/** Desks whose agents are on a long break, and desks that keep leaving and coming back. */
+const ON_BREAK = new Set([2, 5, 10]);
+const COMMUTERS = new Map([[4, 0], [8, 3]]); // desk → phase offset in ticks
+const COMMUTE_TICKS = 6; // ticks spent at work, then the same on break
+
 const STATES: AgentState[] = ["working", "thinking", "waiting_on_user", "idle", "error"];
 const TOOLS = ["Edit", "Bash", "Read", "Grep", "WebFetch", "Write"];
 
@@ -27,7 +32,9 @@ function build(tick: number): Office {
   seed.forEach(([projectKey, title, base, tool, interns], i) => {
     const pid = 1000 + i;
     // A few desks cycle through states so the animations can be reviewed.
-    const state = i % 4 === 1 ? STATES[(tick + i) % STATES.length] : base;
+    const commute = COMMUTERS.get(i);
+    const onBreak = ON_BREAK.has(i) || (commute !== undefined && Math.floor((tick + commute) / COMMUTE_TICKS) % 2 === 1);
+    const state = onBreak ? "idle" : i % 4 === 1 ? STATES[(tick + i) % STATES.length] : base;
     const subagents: Record<string, Subagent> = {};
     (interns ?? []).forEach((s, k) => {
       const id = `intern-${i}-${k}`;
@@ -53,6 +60,7 @@ function build(tick: number): Office {
         ...(state === "error" ? [{ id: `${i}e`, role: "user" as const, type: "error" as const, excerpt: "Command failed: pnpm build (exit 1)" }] : []),
       ],
       subagents,
+      onBreak,
     };
   });
   const waitingCount = Object.values(sessions).filter((s) => s.state === "waiting_on_user").length;

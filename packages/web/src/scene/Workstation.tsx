@@ -1,10 +1,12 @@
-import { useMemo, useState } from "react";
+import { useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import * as THREE from "three";
 import { RoundedBox } from "@react-three/drei";
 import { Label } from "./Label";
-import type { ThreeEvent } from "@react-three/fiber";
+import { useFrame, useThree, type ThreeElements, type ThreeEvent } from "@react-three/fiber";
 import type { AgentState, Session, Subagent } from "../types";
-import { Character } from "./Character";
+import { Character, STAND_HEIGHT, type Activity, type Stance } from "./Character";
+import { BreakPresence } from "./breaks";
+import type { BreakSpot, Point } from "./layout";
 import { DeskLamp, DeskPlant, Display, Headphones, Laptop, MechanicalKeyboard, Mouse, Mug, Notebooks, OfficeChair } from "./Props";
 import { hash, lookFor, palette, stateColor, stateLabel } from "./theme";
 import type { ScreenKind } from "./textures";
@@ -14,6 +16,9 @@ export type Focus = { pid: number; subagentId?: string } | null;
 const DESK_TOP = 0.74;
 const SEAT = 0.49;
 const CHAR_SCALE = 1.22;
+const STAND_Y = STAND_HEIGHT * CHAR_SCALE;
+const WALK = 1.35; // units/s, strolling to a break
+const RUN = 3.4; // units/s, hurrying back to work
 /** Tags float just above the head, or above the alert bubble when waiting. */
 const tagHeight = (state: AgentState) => (state === "waiting_on_user" ? 1.28 : state === "thinking" ? 1.3 : state === "error" ? 1.2 : 1.1);
 
@@ -74,7 +79,7 @@ function Desk({ accent, occupied }: { accent: string; occupied: boolean }) {
   );
 }
 
-function AgentTag({ name, state, tool, emphasis }: { name: string; state: AgentState; tool?: string; emphasis: boolean }) {
+function AgentTag({ name, state, tool, emphasis, onBreak }: { name: string; state: AgentState; tool?: string; emphasis: boolean; onBreak?: boolean }) {
   const waiting = state === "waiting_on_user";
   return (
     <div className={`agent-tag ${waiting ? "agent-tag--waiting" : ""} ${emphasis ? "agent-tag--emphasis" : ""}`} style={{ ["--tag" as string]: stateColor[state] }}>
@@ -84,7 +89,13 @@ function AgentTag({ name, state, tool, emphasis }: { name: string; state: AgentS
       ) : (
         <>
           <span className="agent-tag__name">{name}</span>
-          {state === "working" && tool ? <span className="agent-tag__tool">{tool}</span> : state !== "idle" && <span className="agent-tag__tool">{stateLabel[state]}</span>}
+          {state === "working" && tool ? (
+            <span className="agent-tag__tool">{tool}</span>
+          ) : state !== "idle" ? (
+            <span className="agent-tag__tool">{stateLabel[state]}</span>
+          ) : (
+            onBreak && <span className="agent-tag__tool">On break</span>
+          )}
         </>
       )}
     </div>
@@ -154,18 +165,155 @@ function Intern({
   );
 }
 
+// ── Commuting ────────────────────────────────────────────────
+// Progress is a distance along the desk → break-spot route, so a character called
+// back halfway simply turns round and runs the way it came.
+
+const _a = new THREE.Vector2();
+
+function pointAt(route: THREE.Vector2[], dist: number, out: THREE.Vector2, dir: THREE.Vector2) {
+  for (let i = 1; i < route.length; i++) {
+    const seg = route[i].distanceTo(route[i - 1]);
+    if (dist <= seg || i === route.length - 1) {
+      dir.subVectors(route[i], route[i - 1]).normalize();
+      return out.copy(route[i - 1]).addScaledVector(dir, Math.min(dist, seg));
+    }
+    dist -= seg;
+  }
+  return out.copy(route[0]);
+}
+
+function dampAngle(from: number, to: number, lambda: number, dt: number) {
+  const diff = Math.atan2(Math.sin(to - from), Math.cos(to - from));
+  return from + diff * (1 - Math.exp(-lambda * dt));
+}
+
+function Commuter({
+  origin,
+  route,
+  spot,
+  onSeated,
+  children,
+  ...props
+}: {
+  origin: Point;
+  /** World-space route from the seat to the break spot, or null when not on break. */
+  route: Point[] | null;
+  spot: BreakSpot | null;
+  onSeated: (seated: boolean) => void;
+  children: (stance: Stance, activity: Activity | undefined, stride: React.RefObject<number>) => ReactNode;
+} & Omit<ThreeElements["group"], "children">) {
+  const presence = useContext(BreakPresence);
+  const invalidate = useThree((s) => s.invalidate);
+  const group = useRef<THREE.Group>(null);
+  const stride = useRef(0);
+  // Keep the last route so a character can still find its way back once the break ends.
+  const lastRoute = useRef(route);
+  if (route) lastRoute.current = route;
+  const path = useMemo(
+    () => lastRoute.current?.map((p) => new THREE.Vector2(p.x - origin.x, p.z - origin.z)) ?? [new THREE.Vector2(0, -0.08)],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [route, origin.x, origin.z],
+  );
+  const length = useMemo(() => path.reduce((sum, p, i) => (i ? sum + p.distanceTo(path[i - 1]) : 0), 0), [path]);
+  const progress = useRef(spot ? Infinity : 0); // characters already on break at load start there
+  const hold = useRef(0);
+  const first = useRef(true);
+  const present = useRef<string | null>(null);
+  const [stance, setStance] = useState<Stance>(spot ? "standing" : "seated");
+  const [arrived, setArrived] = useState(!!spot);
+  const dir = useMemo(() => new THREE.Vector2(0, 1), []);
+
+  useEffect(() => onSeated(stance === "seated"), [stance, onSeated]);
+  useEffect(
+    () => () => {
+      if (present.current) presence.delete(present.current);
+    },
+    [presence],
+  );
+
+  useFrame((_, dt) => {
+    const g = group.current;
+    if (!g) return;
+    const d = Math.min(dt, 0.1);
+    const away = !!spot;
+    const before = Math.min(progress.current, length);
+    let s = before;
+    let next: Stance;
+    if (away) {
+      // stand, push the chair in, then stroll off
+      if (s === 0 && hold.current < 0.45) {
+        hold.current += d;
+        next = "standing";
+      } else if (s < length) {
+        s = Math.min(length, s + WALK * d);
+        next = "walking";
+      } else next = "standing";
+    } else {
+      hold.current = 0;
+      if (s > 0) {
+        s = Math.max(0, s - RUN * d);
+        next = "running";
+      } else next = "seated";
+    }
+    progress.current = s;
+    stride.current += Math.abs(s - before) * (next === "running" ? 4.6 : 7.5);
+
+    const p = pointAt(path, s, _a, dir);
+    const atSpot = away && s >= length;
+    const yaw = next === "walking" ? Math.atan2(dir.x, dir.y) : next === "running" ? Math.atan2(-dir.x, -dir.y) : atSpot ? spot!.facing : 0;
+    const y = next === "seated" ? SEAT : STAND_Y;
+    if (first.current) {
+      first.current = false;
+      g.position.y = y;
+      g.rotation.y = yaw;
+    }
+    g.position.x = p.x;
+    g.position.z = p.y;
+    g.position.y = THREE.MathUtils.damp(g.position.y, y, 12, d);
+    g.rotation.y = dampAngle(g.rotation.y, yaw, next === "running" ? 14 : 9, d);
+
+    const here = atSpot ? spot!.id : null;
+    if (here !== present.current) {
+      if (present.current) presence.delete(present.current);
+      if (here) presence.add(here);
+      present.current = here;
+    }
+    if (next !== stance) setStance(next);
+    if (atSpot !== arrived) setArrived(atSpot);
+    const settling = Math.abs(g.position.y - y) > 0.002 || Math.abs(Math.sin(g.rotation.y - yaw)) > 0.01;
+    if (s !== before || settling || (next === "standing" && !atSpot)) invalidate();
+  });
+
+  const activity: Activity | undefined =
+    arrived && spot ? (spot.activity === "pingpong" ? { kind: "pingpong", side: spot.id.endsWith("1") ? 1 : 0 } : { kind: "coffee" }) : undefined;
+
+  return (
+    <group ref={group} {...props}>
+      {children(stance, activity, stride)}
+    </group>
+  );
+}
+
 export function Workstation({
   session,
   accent,
   focus,
   onSelect,
   deskKey,
+  origin,
+  route = null,
+  spot = null,
 }: {
   session: Session | null;
   accent: string;
   focus: Focus;
   onSelect: (f: Focus) => void;
   deskKey: string;
+  /** Desk position in the room. */
+  origin: Point;
+  route?: Point[] | null;
+  spot?: BreakSpot | null;
 }) {
   const seed = hash(session?.sessionId ?? deskKey);
   const look = useMemo(() => lookFor(session?.sessionId ?? deskKey), [session?.sessionId, deskKey]);
@@ -179,6 +327,7 @@ export function Workstation({
   const interns = session ? Object.values(session.subagents ?? {}).slice(0, 3) : [];
   const extraInterns = session ? Math.max(0, Object.keys(session.subagents ?? {}).length - 3) : 0;
   const lit = state !== null;
+  const [seated, setSeated] = useState(true);
 
   return (
     <group>
@@ -209,11 +358,14 @@ export function Workstation({
       {decor === 3 && !look.headphones && <Headphones position={[0.6, DESK_TOP, 0.84]} rotation={[0, 0.4, 0]} />}
       {decor === 3 && look.headphones && <DeskPlant position={[0.62, DESK_TOP, 0.86]} pot={palette.potDark} />}
 
-      <OfficeChair position={[0, 0, session ? -0.14 : 0.08]} rotation={[0, session ? 0 : 0.35, 0]} />
+      <OfficeChair position={[0, 0, session && seated ? -0.14 : 0.08]} rotation={[0, session && seated ? 0 : 0.35, 0]} />
 
       {session && (
-        <group
-          position={[0, SEAT, -0.08]}
+        <Commuter
+          origin={origin}
+          route={route}
+          spot={spot}
+          onSeated={setSeated}
           onClick={(e: ThreeEvent<MouseEvent>) => {
             e.stopPropagation();
             onSelect({ pid: session.pid });
@@ -228,13 +380,26 @@ export function Workstation({
             document.body.style.cursor = "auto";
           }}
         >
-          <Character look={look} state={session.state} accent={accent} scale={CHAR_SCALE} floor={-SEAT / CHAR_SCALE} />
-          {(ACTIVE.includes(session.state) || hover || isFocused) && (
-            <Label position={[0, tagHeight(session.state) * CHAR_SCALE, 0]} zIndexRange={[30, 0]}>
-              <AgentTag name={session.title || session.name} state={session.state} tool={tool} emphasis={isFocused} />
-            </Label>
+          {(stance, activity, stride) => (
+            <>
+              <Character
+                look={look}
+                state={session.state}
+                accent={accent}
+                scale={CHAR_SCALE}
+                floor={-SEAT / CHAR_SCALE}
+                stance={stance}
+                activity={activity}
+                stride={stride}
+              />
+              {(ACTIVE.includes(session.state) || hover || isFocused) && (
+                <Label position={[0, tagHeight(session.state) * CHAR_SCALE, 0]} zIndexRange={[30, 0]}>
+                  <AgentTag name={session.title || session.name} state={session.state} tool={tool} emphasis={isFocused} onBreak={session.onBreak} />
+                </Label>
+              )}
+            </>
           )}
-        </group>
+        </Commuter>
       )}
 
       {session &&

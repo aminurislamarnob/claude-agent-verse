@@ -7,6 +7,7 @@ export function TopBar({ office, connected, preview }: { office: Office; connect
   const sessions = Object.values(office.sessions);
   const counts = new Map<AgentState, number>();
   let interns = 0;
+  const onBreak = sessions.filter((s) => s.onBreak).length;
   for (const s of sessions) {
     counts.set(s.state, (counts.get(s.state) ?? 0) + 1);
     interns += Object.keys(s.subagents ?? {}).length;
@@ -29,6 +30,7 @@ export function TopBar({ office, connected, preview }: { office: Office; connect
             <span className={`live-dot ${connected ? "live-dot--on" : ""}`} />
             {connected ? "Live" : "Reconnecting…"} · {sessions.length} agent{sessions.length === 1 ? "" : "s"} · {projects} project{projects === 1 ? "" : "s"}
             {interns > 0 && ` · ${interns} intern${interns === 1 ? "" : "s"}`}
+            {onBreak > 0 && ` · ${onBreak} on break`}
           </div>
         </div>
       </div>

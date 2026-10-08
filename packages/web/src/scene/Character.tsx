@@ -4,10 +4,16 @@ import { useFrame, type ThreeElements } from "@react-three/fiber";
 import { RoundedBox } from "@react-three/drei";
 import type { AgentState } from "../types";
 import { stateColor, type Look } from "./theme";
+import { rallyHit } from "./breaks";
 
 // ── Chibi developer ──────────────────────────────────────────
-// A seated character whose pose and face are pure functions of Agent State.
-// Origin is the seat surface; the character faces +z.
+// Pose and face are pure functions of Agent State, stance and break activity.
+// Origin is the hip line (the seat surface when seated); the character faces +z.
+
+export type Stance = "seated" | "standing" | "walking" | "running";
+export type Activity = { kind: "pingpong"; side: 0 | 1 } | { kind: "coffee" };
+/** Hip line to sole when standing straight, in character units. */
+export const STAND_HEIGHT = 0.578;
 
 type Expression = "focused" | "curious" | "alert" | "happy" | "worried" | "neutral";
 
@@ -34,6 +40,13 @@ const EXPRESSION: Record<AgentState, Expression> = {
   idle: "happy",
   error: "worried",
   ended: "neutral",
+};
+
+/** Standing poses for break activities. Same shape as POSES; legs straight. */
+const STANDING: Record<"idle" | "pingpong" | "coffee", Pose> = {
+  idle: { lean: 0, head: [0, 0, 0], l: [0.05, -0.1, -0.15], r: [0.05, 0.1, -0.15] },
+  pingpong: { lean: 0.16, head: [0.1, 0, 0], l: [-0.55, -0.25, -1.0], r: [-0.85, 0.3, -0.7] },
+  coffee: { lean: -0.02, head: [-0.05, 0, 0], l: [-0.5, 0.32, -1.55], r: [0.08, 0.12, -0.25] },
 };
 
 const damp = THREE.MathUtils.damp;
@@ -188,8 +201,21 @@ export function Character({
   state,
   accent,
   floor = -0.44,
+  stance = "seated",
+  activity,
+  stride,
   ...props
-}: { look: Look; state: AgentState; accent: string; /** floor height in local units */ floor?: number } & ThreeElements["group"]) {
+}: {
+  look: Look;
+  state: AgentState;
+  accent: string;
+  /** floor height in local units when seated */
+  floor?: number;
+  stance?: Stance;
+  activity?: Activity;
+  /** Distance walked, in radians of gait cycle; advanced by whoever moves the character. */
+  stride?: React.RefObject<number>;
+} & ThreeElements["group"]) {
   const mats = useMaterials(look);
   const torso = useRef<THREE.Group>(null);
   const head = useRef<THREE.Group>(null);
@@ -204,42 +230,107 @@ export function Character({
   const paddleFace = useRef<THREE.Group>(null);
   const sweat = useRef<THREE.Mesh>(null);
   const ring = useRef<THREE.Mesh>(null);
+  const rig = useRef<THREE.Group>(null);
+  const hips = useRef<(THREE.Group | null)[]>([]);
+  const knees = useRef<(THREE.Group | null)[]>([]);
+  const mug = useRef<THREE.Group>(null);
+  const bat = useRef<THREE.Group>(null);
   const seed = useMemo(() => Math.random() * 100, []);
-  const expr = EXPRESSION[state];
+  const moving = stance === "walking" || stance === "running";
+  const expr: Expression = stance === "running" ? "alert" : EXPRESSION[state];
 
   useFrame(({ clock, camera }, dt) => {
     const t = clock.elapsedTime + seed;
-    const pose = POSES[state];
-    const k = 8;
+    const seated = stance === "seated";
+    const running = stance === "running";
+    const pose = seated ? POSES[state] : moving ? STANDING.idle : STANDING[activity?.kind ?? "idle"];
+    const k = moving ? 14 : 8;
     const d = Math.min(dt, 0.1);
+    const g = stride?.current ?? 0;
+    const gait = moving ? Math.sin(g) : 0;
+
+    // ping-pong swing: a quick backswing then a forward stroke as the ball arrives
+    const hit = activity?.kind === "pingpong" && !moving ? rallyHit(clock.elapsedTime, activity.side) : 0;
+    // coffee: an unhurried sip every few seconds
+    const sip = activity?.kind === "coffee" && !moving ? Math.max(0, Math.sin(t * 0.9) - 0.6) / 0.4 : 0;
+
+    if (rig.current) {
+      const bob = running ? Math.abs(Math.sin(g)) * 0.06 : moving ? Math.abs(Math.sin(g)) * 0.025 : 0;
+      rig.current.position.y = damp(rig.current.position.y, bob, 20, d);
+    }
+    // legs: seated thighs forward; standing straight; walking and running swing in opposition
+    for (let i = 0; i < 2; i++) {
+      const hip = hips.current[i];
+      const knee = knees.current[i];
+      if (!hip || !knee) continue;
+      const phase = Math.sin(g + i * Math.PI);
+      let h = 0;
+      let kn = 0;
+      if (seated) {
+        h = -Math.PI / 2;
+        kn = Math.PI / 2;
+      } else if (moving) {
+        const amp = running ? 0.85 : 0.5;
+        h = phase * amp;
+        kn = (running ? 0.35 : 0.1) + Math.max(0, Math.sin(g + i * Math.PI + 1.3)) * (running ? 1.5 : 0.7);
+      } else if (activity?.kind === "pingpong") {
+        h = -0.22;
+        kn = 0.42;
+      }
+      hip.rotation.x = damp(hip.rotation.x, h, k, d);
+      knee.rotation.x = damp(knee.rotation.x, kn, k, d);
+    }
 
     if (torso.current) {
       const breathe = Math.sin(t * 1.6) * 0.012;
-      const bounce = state === "waiting_on_user" ? Math.abs(Math.sin(t * 5)) * 0.03 : 0;
-      torso.current.rotation.x = damp(torso.current.rotation.x, pose.lean + breathe, k, d);
+      const bounce = state === "waiting_on_user" && seated ? Math.abs(Math.sin(t * 5)) * 0.03 : 0;
+      const lean = running ? 0.32 : stance === "walking" ? 0.06 : pose.lean;
+      torso.current.rotation.x = damp(torso.current.rotation.x, lean + breathe, k, d);
+      torso.current.rotation.y = damp(torso.current.rotation.y, moving ? gait * 0.12 : hit * 0.35, k, d);
       torso.current.position.y = damp(torso.current.position.y, bounce, k, d);
     }
     if (head.current) {
       let [px, py, pz] = pose.head;
-      if (state === "working") px += Math.sin(t * 2.2) * 0.04;
-      if (state === "thinking") pz += Math.sin(t * 0.9) * 0.08;
-      if (state === "idle") py += Math.sin(t * 0.5) * 0.25;
-      if (state === "error") py += Math.sin(t * 9) * 0.12;
+      if (seated) {
+        if (state === "working") px += Math.sin(t * 2.2) * 0.04;
+        if (state === "thinking") pz += Math.sin(t * 0.9) * 0.08;
+        if (state === "idle") py += Math.sin(t * 0.5) * 0.25;
+        if (state === "error") py += Math.sin(t * 9) * 0.12;
+      } else if (moving) {
+        px = running ? -0.15 : 0;
+      } else if (activity?.kind === "coffee") {
+        py += Math.sin(t * 0.4) * 0.3;
+        px -= sip * 0.25;
+      }
       head.current.rotation.x = damp(head.current.rotation.x, px, k, d);
       head.current.rotation.y = damp(head.current.rotation.y, py, k, d);
       head.current.rotation.z = damp(head.current.rotation.z, pz, k, d);
     }
     // arms
-    const typing = state === "working" ? 0.12 : 0;
-    const wave = state === "waiting_on_user" ? Math.sin(t * 5) * 0.22 : 0;
-    const set = (s: React.RefObject<THREE.Group | null>, e: React.RefObject<THREE.Group | null>, p: [number, number, number], extraX: number, extraZ: number) => {
+    const typing = state === "working" && seated ? 0.12 : 0;
+    const wave = state === "waiting_on_user" && seated ? Math.sin(t * 5) * 0.22 : 0;
+    const set = (s: React.RefObject<THREE.Group | null>, e: React.RefObject<THREE.Group | null>, p: [number, number, number], extraX: number, extraZ: number, extraE = 0) => {
       if (!s.current || !e.current) return;
       s.current.rotation.x = damp(s.current.rotation.x, p[0] + extraX, k, d);
       s.current.rotation.z = damp(s.current.rotation.z, p[1] + extraZ, k, d);
-      e.current.rotation.x = damp(e.current.rotation.x, p[2] - extraX * 0.6, k, d);
+      e.current.rotation.x = damp(e.current.rotation.x, p[2] - extraX * 0.6 + extraE, k, d);
     };
-    set(lS, lE, pose.l, Math.sin(t * 14) * typing, 0);
-    set(rS, rE, pose.r, Math.sin(t * 14 + 2) * typing, wave);
+    if (moving) {
+      const amp = running ? 0.9 : 0.45;
+      const elbow = running ? -1.45 : -0.3;
+      set(lS, lE, [0, -0.1, elbow], -gait * amp, 0);
+      set(rS, rE, [0, 0.1, elbow], gait * amp, 0);
+    } else {
+      set(lS, lE, pose.l, Math.sin(t * 14) * typing - sip * 0.75, sip * 0.15, -sip * 0.35);
+      set(rS, rE, pose.r, Math.sin(t * 14 + 2) * typing - hit * 0.7, wave + hit * 0.35);
+    }
+    if (mug.current) {
+      mug.current.visible = activity?.kind === "coffee" && !moving;
+      // keep the cup upright whatever the arm is doing
+      mug.current.parent!.getWorldQuaternion(_q).invert();
+      mug.current.quaternion.copy(_q);
+    }
+    if (bat.current) bat.current.visible = activity?.kind === "pingpong" && !moving;
 
     // blink: quick close every few seconds; focused eyes stay narrowed
     if (eyes.current) {
@@ -276,6 +367,7 @@ export function Character({
       ring.current.scale.setScalar(pulse);
       const m = ring.current.material as THREE.MeshBasicMaterial;
       m.opacity = state === "waiting_on_user" || state === "error" ? 0.55 * (1.6 - pulse) / 0.6 : 0.0;
+      ring.current.position.y = (seated ? floor : -STAND_HEIGHT) + 0.01;
     }
   });
 
@@ -291,19 +383,22 @@ export function Character({
         <meshBasicMaterial color={stateColor[state]} transparent opacity={0} depthWrite={false} toneMapped={false} />
       </mesh>
 
-      {/* legs (seated): thighs forward, shins down */}
-      {[-1, 1].map((s) => (
-        <group key={s} position={[s * 0.085, 0.07, 0]}>
-          <mesh material={mats.pants} position={[0, 0, 0.12]} rotation={[Math.PI / 2, 0, 0]} castShadow>
+      <group ref={rig}>
+      {/* legs: hip → thigh → knee → shin → shoe; hang straight down at rest */}
+      {[-1, 1].map((s, i) => (
+        <group key={s} ref={(g) => void (hips.current[i] = g)} position={[s * 0.085, 0.07, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <mesh material={mats.pants} position={[0, -0.12, 0]} castShadow>
             <capsuleGeometry args={[0.065, 0.2, 6, 12]} />
           </mesh>
-          <mesh material={mats.pants} position={[0, -0.17, 0.25]} castShadow>
-            <capsuleGeometry args={[0.058, 0.2, 6, 12]} />
-          </mesh>
-          <RoundedBox args={[0.1, 0.07, 0.17]} radius={0.032} position={[0, -0.36, 0.29]} material={mats.shoe} castShadow />
-          <mesh material={mats.sole} position={[0, -0.39, 0.29]}>
-            <boxGeometry args={[0.1, 0.016, 0.165]} />
-          </mesh>
+          <group ref={(g) => void (knees.current[i] = g)} position={[0, -0.25, 0]} rotation={[Math.PI / 2, 0, 0]}>
+            <mesh material={mats.pants} position={[0, -0.17, 0]} castShadow>
+              <capsuleGeometry args={[0.058, 0.2, 6, 12]} />
+            </mesh>
+            <RoundedBox args={[0.1, 0.07, 0.17]} radius={0.032} position={[0, -0.36, 0.04]} material={mats.shoe} castShadow />
+            <mesh material={mats.sole} position={[0, -0.39, 0.04]}>
+              <boxGeometry args={[0.1, 0.016, 0.165]} />
+            </mesh>
+          </group>
         </group>
       ))}
 
@@ -327,8 +422,41 @@ export function Character({
           <meshStandardMaterial color={accent} roughness={0.4} />
         </mesh>
 
-        <Arm side={-1} refs={{ shoulder: lS, elbow: lE }} mats={mats} />
+        <Arm side={-1} refs={{ shoulder: lS, elbow: lE }} mats={mats}>
+          {/* coffee on break */}
+          <group ref={mug} position={[0.0, -0.17, 0.05]} visible={false}>
+            <mesh castShadow>
+              <cylinderGeometry args={[0.04, 0.035, 0.085, 18]} />
+              <meshStandardMaterial color="#f4f2ee" roughness={0.35} />
+            </mesh>
+            <mesh position={[0, 0.043, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+              <circleGeometry args={[0.036, 18]} />
+              <meshStandardMaterial color="#5b3a26" roughness={0.3} />
+            </mesh>
+            <mesh position={[0.045, 0.005, 0]} rotation={[0, 0, Math.PI / 2]}>
+              <torusGeometry args={[0.02, 0.006, 6, 12, Math.PI]} />
+              <meshStandardMaterial color="#f4f2ee" roughness={0.35} />
+            </mesh>
+          </group>
+        </Arm>
         <Arm side={1} refs={{ shoulder: rS, elbow: rE }} mats={mats}>
+          {/* ping-pong bat: handle in the fist, blade facing forward */}
+          <group ref={bat} visible={false}>
+            <mesh position={[0, -0.2, 0.01]}>
+              <cylinderGeometry args={[0.012, 0.014, 0.08, 8]} />
+              <meshStandardMaterial color="#c9a27e" roughness={0.6} />
+            </mesh>
+            <group position={[0, -0.3, 0.01]} rotation={[Math.PI / 2, 0, 0]}>
+              <mesh castShadow>
+                <cylinderGeometry args={[0.075, 0.075, 0.012, 28]} />
+                <meshStandardMaterial color="#d6453d" roughness={0.6} />
+              </mesh>
+              <mesh position={[0, -0.0065, 0]}>
+                <cylinderGeometry args={[0.075, 0.075, 0.002, 28]} />
+                <meshStandardMaterial color="#1d1f24" roughness={0.6} />
+              </mesh>
+            </group>
+          </group>
           {/* "!" paddle held up while waiting on you; extends past the hand along the arm */}
           <group ref={paddle} visible={false}>
             <mesh position={[0, -0.27, 0]}>
@@ -440,6 +568,8 @@ export function Character({
             <meshStandardMaterial color="#8ec5ff" roughness={0.1} transparent opacity={0.85} />
           </mesh>
         </group>
+      </group>
+
       </group>
 
       {/* thought bubble (thinking) */}

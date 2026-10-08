@@ -13,6 +13,64 @@ const POD_W = DESKS_PER_ROW * DESK_PITCH + 1.6;
 const POD_ROWS_MIN = 1;
 export const LOUNGE_DEPTH = 3.4; // amenity strip along the back wall
 export const SIDE_DEPTH = 2.4; // amenity strip along the left wall
+/** Narrowest room that still fits the lounge, coffee bar and play zone. */
+const MIN_ROOM_X = 9.1;
+
+const ZONES: { kind: ZoneKind; w: number }[] = [
+  { kind: "lounge", w: 3.2 },
+  { kind: "coffee", w: 2.6 },
+  { kind: "play", w: 4.2 },
+  { kind: "screen", w: 2.3 },
+  { kind: "neon", w: 1.6 },
+  { kind: "arcade", w: 1.4 },
+];
+export const PINGPONG_HALF = 1.45; // table centre to player
+/** Standing table in the coffee zone, relative to the zone origin on the back wall. */
+export const COFFEE_TABLE = { x: 0.55, z: 1.8 };
+
+function planAmenities(maxX: number): Amenities {
+  const bz = -LOUNGE_DEPTH;
+  const right = maxX + 1;
+  const zones: Amenities["zones"] = [];
+  let x = -SIDE_DEPTH + 1.3;
+  for (const z of ZONES) {
+    if (x + z.w > right - 0.6 + 1e-6) break;
+    zones.push({ kind: z.kind, x: x + z.w / 2 });
+    x += z.w + 0.25;
+  }
+  const at = (kind: ZoneKind) => zones.find((z) => z.kind === kind)!.x;
+  const coffee = at("coffee");
+  const play = at("play");
+  const table = { x: play, z: bz + 1.7 };
+  // Three around the standing table, two by the counter; most face the camera.
+  const tx = coffee + COFFEE_TABLE.x;
+  const tz = bz + COFFEE_TABLE.z;
+  const round = [-2.5, -1.6, 2.7].map((a, i) => ({
+    id: `coffee-table-${i}`,
+    activity: "coffee" as const,
+    x: tx + Math.sin(a) * 0.62,
+    z: tz + Math.cos(a) * 0.62,
+    facing: a + Math.PI,
+  }));
+  const counter = [
+    { dx: -0.8, dz: 1.05, facing: 0.5 },
+    { dx: -1.0, dz: 1.75, facing: 0.9 },
+  ].map((c, i) => ({ id: `coffee-bar-${i}`, activity: "coffee" as const, x: coffee + c.dx, z: bz + c.dz, facing: c.facing }));
+  return {
+    zones,
+    table,
+    corridorZ: -0.45,
+    spots: [
+      { id: "pingpong-0", activity: "pingpong", x: table.x - PINGPONG_HALF, z: table.z, facing: Math.PI / 2 },
+      { id: "pingpong-1", activity: "pingpong", x: table.x + PINGPONG_HALF, z: table.z, facing: -Math.PI / 2 },
+      round[0],
+      counter[0],
+      round[1],
+      counter[1],
+      round[2],
+    ],
+  };
+}
 
 export class SlotAllocator {
   private slots = new Map<string, number>();
@@ -49,8 +107,32 @@ export interface Pod {
   nooks: { x: number; z: number }[];
 }
 
+export type BreakActivity = "pingpong" | "coffee";
+
+/** A place a character on break stands; facing is a yaw where 0 looks along +z. */
+export interface BreakSpot {
+  id: string;
+  activity: BreakActivity;
+  x: number;
+  z: number;
+  facing: number;
+}
+
+export type ZoneKind = "lounge" | "coffee" | "play" | "screen" | "neon" | "arcade";
+
+/** Back-wall amenity strip, laid out left to right in a fixed order so positions stay put as the room grows. */
+export interface Amenities {
+  zones: { kind: ZoneKind; x: number }[];
+  spots: BreakSpot[];
+  /** Ping-pong table centre. */
+  table: { x: number; z: number };
+  /** Walkway along the front of the amenity strip. */
+  corridorZ: number;
+}
+
 export interface FloorPlan {
   pods: Pod[];
+  amenities: Amenities;
   /** Room interior bounds, including amenity strips. */
   minX: number;
   maxX: number;
@@ -135,11 +217,33 @@ export function planFloor(office: Office, alloc: Allocators): FloorPlan {
     return { projectKey: key, x: px, z: pz, width: POD_W, depth: rows * ROW_PITCH, desks, nooks };
   });
 
+  const maxX = Math.max(usedCols * POD_W, MIN_ROOM_X);
   return {
     pods,
+    amenities: planAmenities(maxX),
     minX: -SIDE_DEPTH,
-    maxX: Math.max(usedCols * POD_W, 7),
+    maxX,
     minZ: -LOUNGE_DEPTH,
     maxZ: Math.max(z, 5.5),
   };
+}
+
+// ── Break routes ─────────────────────────────────────────────
+// Characters walk out behind their chair row, down the aisle left of their pod,
+// and along the corridor in front of the amenity strip.
+
+export type Point = { x: number; z: number };
+
+export function routeToBreak(plan: FloorPlan, desk: { x: number; z: number; podX: number }, spot: BreakSpot): Point[] {
+  const row = desk.z - 0.62;
+  const aisle = desk.podX - 0.45;
+  const corridor = plan.amenities.corridorZ;
+  return [
+    { x: desk.x, z: desk.z - 0.08 },
+    { x: desk.x, z: row },
+    { x: aisle, z: row },
+    { x: aisle, z: corridor },
+    { x: spot.x, z: corridor },
+    { x: spot.x, z: spot.z },
+  ];
 }

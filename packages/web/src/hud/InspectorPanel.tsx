@@ -53,7 +53,7 @@ export function InspectorPanel({ session, focusedSubagentId, onClose, onFocusSub
                 <p className="inspector__desc">{focusedSub.description}</p>
               </>
             ) : (
-              <StateBadge state={session.state} tool={session.currentTool} />
+              <StateBadge state={session.state} tool={session.currentTool} onBreak={session.onBreak} />
             )}
           </div>
         </section>

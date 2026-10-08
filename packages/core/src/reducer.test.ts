@@ -525,6 +525,49 @@ describe("reducer", () => {
     });
   });
 
+  describe("break", () => {
+    const T0 = Date.parse("2026-01-01T10:00:00Z");
+    const MIN = 60_000;
+    const reply = (at: number) => ({
+      type: "transcript_line" as const,
+      pid: 1001,
+      line: { type: "assistant", timestamp: new Date(at).toISOString(), message: { content: [{ type: "text", text: "Done." }] } },
+    });
+    const prompt = (at: number) => ({
+      type: "transcript_line" as const,
+      pid: 1001,
+      line: { type: "user", timestamp: new Date(at).toISOString(), message: { content: "Next task" } },
+    });
+    const tick = (now: number) => ({ type: "tick" as const, now });
+
+    it("sends a session on break after five idle minutes", () => {
+      const office = officeWith(appeared(), reply(T0), tick(T0 + 5 * MIN));
+      expect(office.sessions[1001]!.state).toBe("idle");
+      expect(office.sessions[1001]!.onBreak).toBe(true);
+    });
+
+    it("keeps a recently idle session at its desk", () => {
+      const office = officeWith(appeared(), reply(T0), tick(T0 + 4 * MIN));
+      expect(office.sessions[1001]!.onBreak).toBeFalsy();
+    });
+
+    it("ends the break as soon as a new task arrives, without waiting for a tick", () => {
+      const office = officeWith(appeared(), reply(T0), tick(T0 + 6 * MIN), prompt(T0 + 7 * MIN));
+      expect(office.sessions[1001]!.state).toBe("thinking");
+      expect(office.sessions[1001]!.onBreak).toBe(false);
+    });
+
+    it("never breaks a session that is busy", () => {
+      const office = officeWith(appeared(), prompt(T0), tick(T0 + 30 * MIN));
+      expect(office.sessions[1001]!.onBreak).toBeFalsy();
+    });
+
+    it("counts idle time from session start when there is no activity yet", () => {
+      const office = officeWith(appeared({ startedAt: T0 }), tick(T0 + 5 * MIN));
+      expect(office.sessions[1001]!.onBreak).toBe(true);
+    });
+  });
+
   describe("unknown event types", () => {
     it("are silently skipped", () => {
       const office = officeWith(appeared());

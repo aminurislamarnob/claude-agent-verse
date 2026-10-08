@@ -27,6 +27,11 @@ function processTranscriptLine(session: Session, line: any): Session {
   const uuid = line.uuid || Date.now().toString();
   const timestamp = line.timestamp ? new Date(line.timestamp).getTime() : Date.now();
 
+  if (line.type === "assistant" || line.type === "user") {
+    next.lastActivityAt = timestamp;
+    next.onBreak = false;
+  }
+
   if (line.type === "assistant") {
     if (Array.isArray(content)) {
       const toolUse = content.find((c: any) => c.type === "tool_use");
@@ -184,6 +189,14 @@ function computeOfficeState(office: Office, now?: number): Office {
 
     if (nextSession.state === "waiting_on_user") {
       waitingCount++;
+    }
+
+    // A break starts on a tick after enough idle time and ends the moment the session is busy again.
+    const idleFor = now === undefined ? 0 : now - (nextSession.lastActivityAt ?? nextSession.startedAt);
+    const onBreak = nextSession.state === "idle" && (now === undefined ? !!nextSession.onBreak : idleFor >= office.breakThresholdMs);
+    if (onBreak !== !!nextSession.onBreak) {
+      nextSession.onBreak = onBreak;
+      sessionChanged = true;
     }
 
     // Check subagents
@@ -387,5 +400,5 @@ export function reduce(office: Office, event: DomainEvent): Office {
 }
 
 export function emptyOffice(): Office {
-  return { sessions: {}, waitingCount: 0, waitingThresholdMs: 15000 };
+  return { sessions: {}, waitingCount: 0, waitingThresholdMs: 15000, breakThresholdMs: 5 * 60_000 };
 }
