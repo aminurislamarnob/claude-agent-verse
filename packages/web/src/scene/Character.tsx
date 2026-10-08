@@ -61,9 +61,12 @@ function useMaterials(look: Look) {
       hair: new THREE.MeshStandardMaterial({ color: look.hair, roughness: 0.75 }),
       top: new THREE.MeshStandardMaterial({ color: look.top, roughness: 0.85 }),
       topShade: new THREE.MeshStandardMaterial({ color: new THREE.Color(look.top).multiplyScalar(0.82), roughness: 0.9 }),
-      pants: new THREE.MeshStandardMaterial({ color: "#2e323b", roughness: 0.85 }),
-      shoe: new THREE.MeshStandardMaterial({ color: "#f5f4f1", roughness: 0.5 }),
-      sole: new THREE.MeshStandardMaterial({ color: "#d6d3cd", roughness: 0.6 }),
+      // under a thobe the legs read as the robe falling over them
+      pants: new THREE.MeshStandardMaterial({ color: look.attire === "thobe" ? look.top : "#2e323b", roughness: 0.85 }),
+      beard: new THREE.MeshStandardMaterial({ color: look.hair, roughness: 0.85, side: THREE.DoubleSide }),
+      robe: new THREE.MeshStandardMaterial({ color: look.top, roughness: 0.85, side: THREE.DoubleSide }),
+      shoe: new THREE.MeshStandardMaterial({ color: look.attire === "thobe" ? "#7a5636" : "#f5f4f1", roughness: 0.5 }),
+      sole: new THREE.MeshStandardMaterial({ color: look.attire === "thobe" ? "#4a3424" : "#d6d3cd", roughness: 0.6 }),
       eye: new THREE.MeshStandardMaterial({ color: "#1b1c21", roughness: 0.15 }),
       white: new THREE.MeshBasicMaterial({ color: "#ffffff" }),
       blush: new THREE.MeshBasicMaterial({ color: "#ff8f8f", transparent: true, opacity: 0.32, depthWrite: false }),
@@ -143,6 +146,80 @@ function Hair({ look, mat }: { look: Look; mat: THREE.Material }) {
         </group>
       );
   }
+}
+
+/** Taqiyah: a close-fitting rounded cap with an embroidered band. */
+function PrayerCap({ color }: { color: string }) {
+  const thread = useMemo(() => "#" + new THREE.Color(color).multiplyScalar(0.86).getHexString(), [color]);
+  const r = 0.252;
+  const edge = Math.PI * 0.3;
+  return (
+    <group rotation={[-0.22, 0, 0]}>
+      <mesh castShadow>
+        <sphereGeometry args={[r, 32, 14, 0, Math.PI * 2, 0, edge]} />
+        <meshStandardMaterial color={color} roughness={0.92} />
+      </mesh>
+      <mesh position={[0, r * Math.cos(edge), 0]} rotation={[Math.PI / 2, 0, 0]}>
+        <torusGeometry args={[r * Math.sin(edge), 0.011, 8, 40]} />
+        <meshStandardMaterial color={color} roughness={0.92} />
+      </mesh>
+      {[0.24, 0.17].map((t) => (
+        <mesh key={t} position={[0, (r + 0.001) * Math.cos(Math.PI * t), 0]} rotation={[Math.PI / 2, 0, 0]}>
+          <torusGeometry args={[(r + 0.001) * Math.sin(Math.PI * t), 0.0035, 6, 40]} />
+          <meshStandardMaterial color={thread} roughness={0.8} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+let beardGeo: THREE.BufferGeometry | null = null;
+
+/**
+ * Full Sunnah beard as one smooth shell over the lower face: sideburns at ear
+ * level, a clean line below the mouth at the front, thickening toward the chin
+ * and rounding forward and down. Built on a (around, down) grid in head space.
+ */
+function beardGeometry() {
+  if (beardGeo) return beardGeo;
+  const AROUND = 44;
+  const DOWN = 18;
+  const span = Math.PI * 0.62; // ear to ear, a little behind each ear
+  const smooth = THREE.MathUtils.smoothstep;
+  const positions: number[] = [];
+  const indices: number[] = [];
+  const p = new THREE.Vector3();
+  const n = new THREE.Vector3();
+  const chinDir = new THREE.Vector3(0, -0.55, 0.85).normalize();
+  for (let j = 0; j <= DOWN; j++) {
+    const v = j / DOWN;
+    for (let i = 0; i <= AROUND; i++) {
+      const phi = -span + (2 * span * i) / AROUND; // 0 = straight ahead
+      const side = smooth(Math.abs(phi), 0, Math.PI * 0.5);
+      const top = THREE.MathUtils.lerp(Math.PI * 0.7, Math.PI * 0.5, side); // below the mouth in front, ear level at the sides
+      const theta = THREE.MathUtils.lerp(top, Math.PI * 0.97, v);
+      p.set(Math.sin(theta) * Math.sin(phi) * 0.235, Math.cos(theta) * 0.235 * 0.94, Math.sin(theta) * Math.cos(phi) * 0.235 * 0.96);
+      n.copy(p).normalize();
+      const edge = smooth(span - Math.abs(phi), 0, 0.35); // thin out behind the ears
+      const thick = (0.008 + 0.05 * Math.pow(v, 0.8) * (0.55 + 0.45 * Math.cos(phi))) * (0.25 + 0.75 * edge);
+      p.addScaledVector(n, thick);
+      // fist-length fullness at the chin
+      const chin = Math.exp(-((phi / 0.6) ** 2)) * smooth(v, 0.35, 1);
+      p.addScaledVector(chinDir, 0.075 * chin);
+      positions.push(p.x, p.y, p.z);
+    }
+  }
+  const row = AROUND + 1;
+  for (let j = 0; j < DOWN; j++)
+    for (let i = 0; i < AROUND; i++) {
+      const a = j * row + i;
+      indices.push(a, a + row, a + 1, a + 1, a + row, a + row + 1);
+    }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  g.setIndex(indices);
+  g.computeVertexNormals();
+  return (beardGeo = g);
 }
 
 function Beanie({ color }: { color: string }) {
@@ -408,20 +485,51 @@ export function Character({
         </group>
       ))}
 
+      {/* the thobe falls past the knees when standing; seated, the legs carry its colour */}
+      {look.attire === "thobe" && stance !== "seated" && (
+        <group position={[0, -0.12, -0.01]}>
+          <mesh material={mats.robe} castShadow>
+            <cylinderGeometry args={[0.165, 0.205, 0.42, 28, 1, true]} />
+          </mesh>
+          <mesh material={mats.topShade} position={[0, -0.205, 0]} rotation={[Math.PI / 2, 0, 0]}>
+            <torusGeometry args={[0.205, 0.008, 6, 36]} />
+          </mesh>
+        </group>
+      )}
+
       <group ref={torso} position={[0, 0.06, -0.02]}>
-        {/* hoodie body */}
+        {/* body */}
         <mesh material={mats.top} position={[0, 0.17, 0]} castShadow>
           <capsuleGeometry args={[0.165, 0.16, 8, 20]} />
         </mesh>
-        <mesh material={mats.topShade} position={[0, 0.3, -0.12]} rotation={[0.5, 0, 0]} castShadow>
-          <torusGeometry args={[0.1, 0.045, 10, 20]} />
-        </mesh>
-        <RoundedBox args={[0.2, 0.08, 0.04]} radius={0.02} position={[0, 0.1, 0.15]} material={mats.topShade} />
-        {[-1, 1].map((s) => (
-          <mesh key={s} material={mats.white} position={[s * 0.035, 0.24, 0.158]}>
-            <cylinderGeometry args={[0.005, 0.005, 0.08, 6]} />
-          </mesh>
-        ))}
+        {look.attire === "thobe" ? (
+          <>
+            {/* thobe: mandarin collar, button placket and a chest pocket */}
+            <mesh material={mats.top} position={[0, 0.335, 0]} rotation={[Math.PI / 2, 0, 0]}>
+              <torusGeometry args={[0.072, 0.016, 8, 24]} />
+            </mesh>
+            <RoundedBox args={[0.034, 0.13, 0.012]} radius={0.005} position={[0, 0.25, 0.158]} rotation={[-0.12, 0, 0]} material={mats.topShade} />
+            {[0.29, 0.25, 0.21].map((y) => (
+              <mesh key={y} position={[0, y, 0.166]}>
+                <sphereGeometry args={[0.0075, 8, 6]} />
+                <meshStandardMaterial color="#c9c3b6" roughness={0.4} />
+              </mesh>
+            ))}
+            <RoundedBox args={[0.055, 0.045, 0.01]} radius={0.004} position={[-0.075, 0.22, 0.152]} rotation={[-0.1, -0.35, 0]} material={mats.topShade} />
+          </>
+        ) : (
+          <>
+            <mesh material={mats.topShade} position={[0, 0.3, -0.12]} rotation={[0.5, 0, 0]} castShadow>
+              <torusGeometry args={[0.1, 0.045, 10, 20]} />
+            </mesh>
+            <RoundedBox args={[0.2, 0.08, 0.04]} radius={0.02} position={[0, 0.1, 0.15]} material={mats.topShade} />
+            {[-1, 1].map((s) => (
+              <mesh key={s} material={mats.white} position={[s * 0.035, 0.24, 0.158]}>
+                <cylinderGeometry args={[0.005, 0.005, 0.08, 6]} />
+              </mesh>
+            ))}
+          </>
+        )}
         {/* lanyard badge in team colour */}
         <mesh position={[0.07, 0.19, 0.165]} rotation={[0.1, 0, 0.08]}>
           <boxGeometry args={[0.045, 0.06, 0.006]} />
@@ -501,6 +609,8 @@ export function Character({
           ))}
 
           {look.beanie ? <Beanie color={accent} /> : <Hair look={look} mat={mats.hair} />}
+          {look.prayerCap && <PrayerCap color="#f7f5f0" />}
+          {look.beard && <mesh geometry={beardGeometry()} material={mats.beard} castShadow />}
 
           {/* face */}
           <group position={[0, -0.02, 0]}>

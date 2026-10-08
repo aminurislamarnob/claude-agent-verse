@@ -73,6 +73,7 @@ export function teamColor(projectKey: string): string {
 
 const skinTones = ["#f6d7c3", "#eec1a0", "#d9a07c", "#b97a56", "#8d5a3c", "#f3cfb3"] as const;
 const hairColors = ["#2a211d", "#4a3426", "#7a4b2a", "#c48a4a", "#1d1d22", "#a14b3a", "#d9c6a5"] as const;
+const thobeColors = ["#f6f4ef", "#ece5d8", "#dde2e6", "#e9e4dc"] as const;
 const hoodieColors = ["#2f3440", "#e8e4dc", "#5b6cff", "#d97757", "#14a38b", "#9aa3b5", "#262a33", "#c2549d"] as const;
 
 export type HairStyle = "crop" | "bun" | "curly" | "bob" | "swoop" | "buzz";
@@ -83,6 +84,12 @@ export interface Look {
   hair: string;
   hairStyle: HairStyle;
   top: string;
+  /** Hoodie and trousers, or a thobe (long robe) with sandals. */
+  attire: "hoodie" | "thobe";
+  /** Taqiyah prayer cap. */
+  prayerCap: boolean;
+  /** Full Sunnah beard. */
+  beard: boolean;
   glasses: boolean;
   headphones: boolean;
   beanie: boolean;
@@ -91,13 +98,18 @@ export interface Look {
 /** A stable appearance derived from an id so a session keeps its look across reloads. */
 export function lookFor(id: string, opts: { intern?: boolean } = {}): Look {
   const s = hash(id);
+  // About one developer in five wears a thobe, prayer cap and Sunnah beard.
+  const traditional = !opts.intern && (s >>> 13) % 5 === 0;
   return {
     skin: pick(skinTones, s, 1),
     hair: pick(hairColors, s, 2),
-    hairStyle: pick(hairStyles, s, 3),
-    top: pick(hoodieColors, s, 4),
+    hairStyle: traditional ? "buzz" : pick(hairStyles, s, 3),
+    top: traditional ? pick(thobeColors, s, 14) : pick(hoodieColors, s, 4),
+    attire: traditional ? "thobe" : "hoodie",
+    prayerCap: traditional,
+    beard: traditional,
     glasses: (s >>> 5) % 3 === 0,
-    headphones: !opts.intern && (s >>> 7) % 4 === 0,
+    headphones: !opts.intern && !traditional && (s >>> 7) % 4 === 0,
     beanie: !!opts.intern,
   };
 }
