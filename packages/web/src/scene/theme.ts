@@ -76,13 +76,25 @@ const hairColors = ["#2a211d", "#4a3426", "#7a4b2a", "#c48a4a", "#1d1d22", "#a14
 const hoodieColors = ["#2f3440", "#e8e4dc", "#5b6cff", "#d97757", "#14a38b", "#9aa3b5", "#262a33", "#c2549d"] as const;
 
 export type HairStyle = "crop" | "bun" | "curly" | "bob" | "swoop" | "buzz";
-const hairStyles: readonly HairStyle[] = ["crop", "bun", "curly", "bob", "swoop", "buzz"];
+const hairStyles: readonly HairStyle[] = ["curly", "crop", "bun", "curly", "bob", "swoop", "buzz"];
+const irisColors = ["#3d6fb8", "#6b4226", "#3f8a5a", "#8a6a2e", "#4f8fb8", "#5a3a22"] as const;
+const shoeColors = ["#f2a93b", "#f4f2ee", "#e5634f", "#f2c94c", "#5b6cff", "#2f3440"] as const;
+const denim = ["#4f78a8", "#5d86b5", "#3f5f8c"] as const;
+export type Outfit = "hoodie" | "overalls";
 
 export interface Look {
   skin: string;
   hair: string;
   hairStyle: HairStyle;
   top: string;
+  /** Iris colour of the big cartoon eyes. */
+  iris: string;
+  outfit: Outfit;
+  /** Trousers or overall colour. */
+  pants: string;
+  /** Strap colour for overalls. */
+  strap: string;
+  shoe: string;
   glasses: boolean;
   headphones: boolean;
   beanie: boolean;
@@ -96,6 +108,11 @@ export function lookFor(id: string, opts: { intern?: boolean } = {}): Look {
     hair: pick(hairColors, s, 2),
     hairStyle: pick(hairStyles, s, 3),
     top: pick(hoodieColors, s, 4),
+    iris: pick(irisColors, s, 8),
+    outfit: (s >>> 9) % 5 < 2 ? "overalls" : "hoodie",
+    pants: (s >>> 9) % 5 < 2 ? pick(denim, s, 10) : "#2e323b",
+    strap: pick(["#7fa046", "#d97757", "#5b6cff", "#e0a526"] as const, s, 11),
+    shoe: pick(shoeColors, s, 12),
     glasses: (s >>> 5) % 3 === 0,
     headphones: !opts.intern && (s >>> 7) % 4 === 0,
     beanie: !!opts.intern,
