@@ -568,6 +568,71 @@ describe("reducer", () => {
     });
   });
 
+  describe("registry status", () => {
+    const T0 = Date.parse("2026-01-01T10:00:00Z");
+    const MIN = 60_000;
+    const status = (value: string, at: number, sessionId = "aaa-bbb-ccc") => ({ type: "session_status" as const, pid: 1001, status: value, at, sessionId });
+    const userLine = (at: number) => ({
+      type: "transcript_line" as const,
+      pid: 1001,
+      line: { type: "user", timestamp: new Date(at).toISOString(), message: { content: "Do the thing" } },
+    });
+    const toolLine = (at: number, name: string) => ({
+      type: "transcript_line" as const,
+      pid: 1001,
+      line: { type: "assistant", timestamp: new Date(at).toISOString(), message: { content: [{ type: "tool_use", name }] } },
+    });
+    const tick = (now: number) => ({ type: "tick" as const, now });
+
+    it("trusts an idle registry over a stale transcript", () => {
+      const office = officeWith(appeared(), status("idle", T0), userLine(T0 - MIN));
+      expect(office.sessions[1001]!.state).toBe("idle");
+    });
+
+    it("shows a busy session as thinking until the transcript names a tool", () => {
+      let office = officeWith(appeared(), status("busy", T0));
+      expect(office.sessions[1001]!.state).toBe("thinking");
+      office = reduce(office, toolLine(T0 + 1000, "Bash"));
+      expect(office.sessions[1001]!.state).toBe("working");
+      expect(office.sessions[1001]!.currentTool).toBe("Bash");
+    });
+
+    it("counts break time from when the registry went idle", () => {
+      const office = officeWith(appeared(), userLine(T0), status("idle", T0 + 3 * MIN), tick(T0 + 6 * MIN));
+      expect(office.sessions[1001]!.onBreak).toBeFalsy();
+      expect(reduce(office, tick(T0 + 8 * MIN)).sessions[1001]!.onBreak).toBe(true);
+    });
+
+    it("ends a break the moment the registry says busy", () => {
+      const office = officeWith(appeared(), status("idle", T0), tick(T0 + 6 * MIN), status("busy", T0 + 7 * MIN));
+      expect(office.sessions[1001]!.state).toBe("thinking");
+      expect(office.sessions[1001]!.onBreak).toBe(false);
+    });
+
+    it("keeps a permission prompt visible whatever the registry says", () => {
+      const office = officeWith(appeared(), { type: "hook_event", pid: 1001, hookData: { type: "PermissionRequest" } }, status("idle", T0));
+      expect(office.sessions[1001]!.state).toBe("waiting_on_user");
+    });
+
+    it("falls back to the transcript for a status it does not know", () => {
+      const office = officeWith(appeared(), status("shell", T0), userLine(T0));
+      expect(office.sessions[1001]!.state).toBe("thinking");
+    });
+
+    it("starts a fresh conversation when the process gets a new session id", () => {
+      const office = officeWith(
+        appeared(),
+        { type: "transcript_line", pid: 1001, line: { type: "ai-title", aiTitle: "Old work" } },
+        userLine(T0),
+        status("idle", T0 + MIN, "ddd-eee-fff"),
+      );
+      const s = office.sessions[1001]!;
+      expect(s.sessionId).toBe("ddd-eee-fff");
+      expect(s.title).toBeUndefined();
+      expect(s.feed).toEqual([]);
+    });
+  });
+
   describe("unknown event types", () => {
     it("are silently skipped", () => {
       const office = officeWith(appeared());

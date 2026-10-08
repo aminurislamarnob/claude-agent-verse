@@ -6,6 +6,7 @@ export type {
   SessionAppeared,
   TranscriptLine,
   SessionEnded,
+  SessionStatus,
   Subagent,
   SubagentAppeared,
   SubagentEnded,

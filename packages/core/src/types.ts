@@ -64,6 +64,8 @@ export interface Session {
   lastActivityAt?: number;
   /** Idle for at least the break threshold: the character leaves its desk */
   onBreak?: boolean;
+  /** Claude Code's own busy/idle flag from the session registry; overrides transcript inference */
+  registryStatus?: "busy" | "idle";
 }
 
 /**
@@ -91,6 +93,21 @@ export interface SessionAppeared {
   name: string;
   projectKey: string;
   startedAt: number;
+}
+
+/**
+ * The registry entry's activity status changed. Claude Code keeps this current
+ * itself, so it is more reliable than inferring busy/idle from the transcript.
+ */
+export interface SessionStatus {
+  type: "session_status";
+  pid: number;
+  /** "busy", "idle", or a value this version does not know (ignored). */
+  status: string;
+  /** Epoch ms of the status change. */
+  at?: number;
+  /** The process's current session id; changes when a new conversation starts in it. */
+  sessionId: string;
 }
 
 export interface SessionEnded {
@@ -145,6 +162,7 @@ export interface HookEvent {
 export type DomainEvent =
   | SessionAppeared
   | SessionEnded
+  | SessionStatus
   | TranscriptLine
   | SubagentAppeared
   | SubagentEnded
