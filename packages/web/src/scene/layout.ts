@@ -27,6 +27,17 @@ const ZONES: { kind: ZoneKind; w: number }[] = [
 export const PINGPONG_HALF = 1.45; // table centre to player
 /** Standing table in the coffee zone, relative to the zone origin on the back wall. */
 export const COFFEE_TABLE = { x: 0.55, z: 1.8 };
+/** Lounge furniture, relative to the zone origin on the back wall. */
+export const LOUNGE = {
+  sofa: { x: 0, z: 0.62, seat: 0.55, seats: [-0.6, 0, 0.6] },
+  table: { x: 0.1, z: 1.75 },
+  beanBags: [
+    { x: -1.0, z: 2.25, facing: 0.5 },
+    { x: 1.15, z: 2.15, facing: 0.9 },
+  ],
+  /** Top of the bean bag's hollow; matches BeanBag's geometry. */
+  beanBagSeat: 0.27,
+};
 
 function planAmenities(maxX: number): Amenities {
   const bz = -LOUNGE_DEPTH;
@@ -39,6 +50,7 @@ function planAmenities(maxX: number): Amenities {
     x += z.w + 0.25;
   }
   const at = (kind: ZoneKind) => zones.find((z) => z.kind === kind)!.x;
+  const lounge = at("lounge");
   const coffee = at("coffee");
   const play = at("play");
   const table = { x: play, z: bz + 1.7 };
@@ -68,6 +80,30 @@ function planAmenities(maxX: number): Amenities {
       round[1],
       counter[1],
       round[2],
+      // Sofa sitters slip in through the gap between the sofa and the coffee table.
+      ...LOUNGE.sofa.seats.map((dx, i) => {
+        const gap = bz + (LOUNGE.sofa.z + LOUNGE.table.z) / 2 + 0.03;
+        return {
+          id: `lounge-sofa-${i}`,
+          activity: "lounge" as const,
+          x: lounge + LOUNGE.sofa.x + dx,
+          z: bz + LOUNGE.sofa.z,
+          facing: 0,
+          seat: LOUNGE.sofa.seat,
+          via: [
+            { x: lounge - 1.35, z: gap },
+            { x: lounge + LOUNGE.sofa.x + dx, z: gap },
+          ],
+        };
+      }),
+      ...LOUNGE.beanBags.map((p, i) => ({
+        id: `lounge-beanbag-${i}`,
+        activity: "lounge" as const,
+        x: lounge + p.x,
+        z: bz + p.z,
+        facing: p.facing,
+        seat: LOUNGE.beanBagSeat,
+      })),
     ],
   };
 }
@@ -107,15 +143,19 @@ export interface Pod {
   nooks: { x: number; z: number }[];
 }
 
-export type BreakActivity = "pingpong" | "coffee";
+export type BreakActivity = "pingpong" | "coffee" | "lounge";
 
-/** A place a character on break stands; facing is a yaw where 0 looks along +z. */
+/** A place a character on break stands or sits; facing is a yaw where 0 looks along +z. */
 export interface BreakSpot {
   id: string;
   activity: BreakActivity;
   x: number;
   z: number;
   facing: number;
+  /** Seat height when the character sits here; absent means standing. */
+  seat?: number;
+  /** Waypoints between the corridor and the spot, for spots tucked behind furniture. */
+  via?: { x: number; z: number }[];
 }
 
 export type ZoneKind = "lounge" | "coffee" | "play" | "screen" | "neon" | "arcade";
@@ -238,12 +278,15 @@ export function routeToBreak(plan: FloorPlan, desk: { x: number; z: number; podX
   const row = desk.z - 0.62;
   const aisle = desk.podX - 0.45;
   const corridor = plan.amenities.corridorZ;
+  const via = spot.via ?? [];
+  const entry = via[0] ?? spot;
   return [
     { x: desk.x, z: desk.z - 0.08 },
     { x: desk.x, z: row },
     { x: aisle, z: row },
     { x: aisle, z: corridor },
-    { x: spot.x, z: corridor },
+    { x: entry.x, z: corridor },
+    ...via,
     { x: spot.x, z: spot.z },
   ];
 }

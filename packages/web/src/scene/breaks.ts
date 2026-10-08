@@ -27,7 +27,7 @@ export const BreakPresence = createContext<Set<string>>(new Set());
 /**
  * Sticky assignment of on-break sessions to spots. A session keeps its spot for the
  * whole break; newcomers take the first free spot in their own preference order,
- * so some agents head for ping-pong first and others for coffee, except that a lone
+ * so agents head for ping-pong, coffee or the lounge first, except that a lone
  * player always gets a partner before anyone else picks.
  */
 export class BreakAllocator {
@@ -41,8 +41,8 @@ export class BreakAllocator {
     const taken = new Set(this.bySession.values());
     const waiting = sessions.filter((s) => s.onBreak && !this.bySession.has(s.pid)).sort((a, b) => a.pid - b.pid);
     for (const s of waiting) {
-      const coffeeFirst = hash(s.sessionId) % 2 === 0;
-      const rank = (i: number) => (spots[i].activity === "coffee" === coffeeFirst ? 0 : 100) + i;
+      const preferred = (["pingpong", "coffee", "lounge"] as const)[hash(s.sessionId) % 3];
+      const rank = (i: number) => (spots[i].activity === preferred ? 0 : 100) + i;
       const order = spots.map((_, i) => i).sort((a, b) => rank(a) - rank(b)).map((i) => spots[i]);
       // A lone ping-pong player is waiting for a partner, so the next agent on break joins them.
       const pingpong = spots.filter((sp) => sp.activity === "pingpong");
