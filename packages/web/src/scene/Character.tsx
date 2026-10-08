@@ -3,7 +3,8 @@ import * as THREE from "three";
 import { useFrame, type ThreeElements } from "@react-three/fiber";
 import { RoundedBox } from "@react-three/drei";
 import type { AgentState } from "../types";
-import { stateColor, type Look } from "./theme";
+import { hash, stateColor, type Look } from "./theme";
+import { hairGeometry } from "./hair";
 import { rallyHit } from "./breaks";
 
 // ── Chibi developer ──────────────────────────────────────────
@@ -55,94 +56,40 @@ const _q = new THREE.Quaternion();
 const FACE_UP = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2);
 
 function useMaterials(look: Look) {
-  return useMemo(
-    () => ({
-      skin: new THREE.MeshStandardMaterial({ color: look.skin, roughness: 0.62 }),
-      hair: new THREE.MeshStandardMaterial({ color: look.hair, roughness: 0.75 }),
+  return useMemo(() => {
+    const skin = new THREE.Color(look.skin);
+    return {
+      // soft, slightly velvety skin reads as warm and toy-like
+      skin: new THREE.MeshPhysicalMaterial({ color: skin, roughness: 0.55, sheen: 0.5, sheenColor: new THREE.Color("#ffd2c2"), sheenRoughness: 0.6 }),
+      skinShade: new THREE.MeshStandardMaterial({ color: skin.clone().multiplyScalar(0.82), roughness: 0.7 }),
+      nose: new THREE.MeshPhysicalMaterial({ color: skin.clone().lerp(new THREE.Color("#e8836f"), 0.28), roughness: 0.45, sheen: 0.4, sheenColor: new THREE.Color("#ffd2c2") }),
+      hair: new THREE.MeshPhysicalMaterial({ color: look.hair, roughness: 0.55, sheen: 0.6, sheenColor: new THREE.Color(look.hair).lerp(new THREE.Color("#ffffff"), 0.35), sheenRoughness: 0.4 }),
       top: new THREE.MeshStandardMaterial({ color: look.top, roughness: 0.85 }),
       topShade: new THREE.MeshStandardMaterial({ color: new THREE.Color(look.top).multiplyScalar(0.82), roughness: 0.9 }),
-      pants: new THREE.MeshStandardMaterial({ color: "#2e323b", roughness: 0.85 }),
-      shoe: new THREE.MeshStandardMaterial({ color: "#f5f4f1", roughness: 0.5 }),
-      sole: new THREE.MeshStandardMaterial({ color: "#d6d3cd", roughness: 0.6 }),
-      eye: new THREE.MeshStandardMaterial({ color: "#1b1c21", roughness: 0.15 }),
+      pants: new THREE.MeshStandardMaterial({ color: look.pants, roughness: 0.8 }),
+      strap: new THREE.MeshStandardMaterial({ color: look.strap, roughness: 0.7 }),
+      button: new THREE.MeshStandardMaterial({ color: "#e3c37a", roughness: 0.3, metalness: 0.7 }),
+      shoe: new THREE.MeshPhysicalMaterial({ color: look.shoe, roughness: 0.45, clearcoat: 0.3 }),
+      sole: new THREE.MeshStandardMaterial({ color: new THREE.Color(look.shoe).lerp(new THREE.Color("#ffffff"), 0.55), roughness: 0.6 }),
+      sclera: new THREE.MeshPhysicalMaterial({ color: "#fbfbf8", roughness: 0.25, clearcoat: 1 }),
+      iris: new THREE.MeshPhysicalMaterial({ color: look.iris, roughness: 0.3, clearcoat: 1 }),
+      pupil: new THREE.MeshStandardMaterial({ color: "#121318", roughness: 0.2 }),
+      lash: new THREE.MeshStandardMaterial({ color: "#2a1d18", roughness: 0.6 }),
+      brow: new THREE.MeshStandardMaterial({ color: new THREE.Color(look.hair).multiplyScalar(0.85), roughness: 0.7 }),
       white: new THREE.MeshBasicMaterial({ color: "#ffffff" }),
-      blush: new THREE.MeshBasicMaterial({ color: "#ff8f8f", transparent: true, opacity: 0.32, depthWrite: false }),
-      mouth: new THREE.MeshStandardMaterial({ color: "#5a2a2a", roughness: 0.5 }),
+      blush: new THREE.MeshBasicMaterial({ color: "#ff7f7f", transparent: true, opacity: 0.38, depthWrite: false }),
+      mouth: new THREE.MeshStandardMaterial({ color: "#8a3838", roughness: 0.5 }),
+      mouthDark: new THREE.MeshStandardMaterial({ color: "#5a2020", roughness: 0.6 }),
+      tongue: new THREE.MeshStandardMaterial({ color: "#e57f7f", roughness: 0.6 }),
       frame: new THREE.MeshStandardMaterial({ color: "#1d1f24", roughness: 0.3, metalness: 0.4 }),
       gear: new THREE.MeshStandardMaterial({ color: "#2b2d33", roughness: 0.5 }),
-    }),
-    [look],
-  );
+    };
+  }, [look]);
 }
 
 function Hair({ look, mat }: { look: Look; mat: THREE.Material }) {
-  const cap = (thetaLen: number, r = 0.243) => (
-    <mesh material={mat} castShadow>
-      <sphereGeometry args={[r, 32, 20, 0, Math.PI * 2, 0, thetaLen]} />
-    </mesh>
-  );
-  switch (look.hairStyle) {
-    case "buzz":
-      return <group rotation={[-0.25, 0, 0]}>{cap(Math.PI * 0.42, 0.236)}</group>;
-    case "bun":
-      return (
-        <group rotation={[-0.3, 0, 0]}>
-          {cap(Math.PI * 0.48)}
-          <mesh material={mat} position={[0, 0.25, -0.06]} castShadow>
-            <sphereGeometry args={[0.085, 20, 16]} />
-          </mesh>
-        </group>
-      );
-    case "curly":
-      return (
-        <group>
-          <group rotation={[-0.3, 0, 0]}>{cap(Math.PI * 0.46)}</group>
-          {Array.from({ length: 14 }).map((_, i) => {
-            const a = (i / 14) * Math.PI * 2;
-            const ring = i % 2 ? 0.17 : 0.11;
-            return (
-              <mesh key={i} material={mat} position={[Math.cos(a) * ring, 0.17 + (i % 2) * 0.04, Math.sin(a) * ring - 0.02]} castShadow>
-                <sphereGeometry args={[0.07, 14, 12]} />
-              </mesh>
-            );
-          })}
-        </group>
-      );
-    case "bob":
-      return (
-        <group>
-          <group rotation={[-0.42, 0, 0]}>{cap(Math.PI * 0.56, 0.25)}</group>
-          {[-1, 1].map((s) => (
-            <mesh key={s} material={mat} position={[s * 0.19, -0.05, -0.02]} scale={[0.07, 0.17, 0.15]} castShadow>
-              <sphereGeometry args={[1, 16, 12]} />
-            </mesh>
-          ))}
-          <mesh material={mat} position={[0, -0.03, -0.13]} scale={[0.2, 0.18, 0.12]} castShadow>
-            <sphereGeometry args={[1, 18, 14]} />
-          </mesh>
-        </group>
-      );
-    case "swoop":
-      return (
-        <group>
-          <group rotation={[-0.32, 0, 0]}>{cap(Math.PI * 0.47)}</group>
-          <mesh material={mat} position={[0.06, 0.17, 0.1]} rotation={[0.4, 0, -0.5]} scale={[0.16, 0.07, 0.11]} castShadow>
-            <sphereGeometry args={[1, 18, 12]} />
-          </mesh>
-        </group>
-      );
-    default:
-      return (
-        <group>
-          <group rotation={[-0.34, 0, 0]}>{cap(Math.PI * 0.47)}</group>
-          {[-0.09, -0.02, 0.06].map((x, i) => (
-            <mesh key={i} material={mat} position={[x, 0.15, 0.17]} rotation={[0.9, 0, (i - 1) * 0.3]} scale={[0.06, 0.035, 0.05]} castShadow>
-              <sphereGeometry args={[1, 12, 10]} />
-            </mesh>
-          ))}
-        </group>
-      );
-  }
+  const geometry = hairGeometry(look.hairStyle, hash(look.hair + look.top + look.skin));
+  return <mesh geometry={geometry} material={mat} castShadow />;
 }
 
 function Beanie({ color }: { color: string }) {
@@ -188,8 +135,12 @@ function Arm({
         <mesh material={mats.topShade} position={[0, -0.115, 0]}>
           <cylinderGeometry args={[0.044, 0.044, 0.025, 14]} />
         </mesh>
-        <mesh material={mats.skin} position={[0, -0.155, 0]} castShadow>
-          <sphereGeometry args={[0.046, 16, 12]} />
+        {/* chubby mitten hand with a little thumb */}
+        <mesh material={mats.skin} position={[0, -0.16, 0]} scale={[1, 1.05, 0.9]} castShadow>
+          <sphereGeometry args={[0.056, 18, 14]} />
+        </mesh>
+        <mesh material={mats.skin} position={[-side * 0.035, -0.15, 0.03]} scale={[0.7, 1, 0.7]}>
+          <sphereGeometry args={[0.022, 10, 8]} />
         </mesh>
         {children}
       </group>
@@ -340,7 +291,7 @@ export function Character({
 
     // blink: quick close every few seconds; focused eyes stay narrowed
     if (eyes.current) {
-      const open = expr === "focused" ? 0.62 : expr === "alert" ? 1.18 : 1;
+      const open = expr === "focused" ? 0.72 : expr === "alert" ? 1.12 : expr === "happy" ? 0.9 : 1;
       const blink = (t % 3.7) < 0.12 ? 0.1 : 1;
       eyes.current.scale.y = damp(eyes.current.scale.y, open * blink, 20, d);
       const look = expr === "curious" ? 0.03 : 0;
@@ -377,9 +328,9 @@ export function Character({
     }
   });
 
-  const eyeVisible = expr !== "happy";
-  const browTilt = { focused: 0.28, curious: -0.18, alert: -0.3, happy: 0, worried: -0.42, neutral: 0 }[expr];
-  const browLift = { focused: -0.012, curious: 0.025, alert: 0.035, happy: 0.018, worried: 0.02, neutral: 0 }[expr];
+  // positive tilt raises the inner ends of the brows
+  const browTilt = { focused: -0.22, curious: 0.08, alert: 0.12, happy: 0.04, worried: 0.38, neutral: 0 }[expr];
+  const browLift = { focused: -0.01, curious: 0.02, alert: 0.03, happy: 0.012, worried: 0.012, neutral: 0 }[expr];
 
   return (
     <group {...props}>
@@ -400,10 +351,9 @@ export function Character({
             <mesh material={mats.pants} position={[0, -0.17, 0]} castShadow>
               <capsuleGeometry args={[0.058, 0.2, 6, 12]} />
             </mesh>
-            <RoundedBox args={[0.1, 0.07, 0.17]} radius={0.032} position={[0, -0.36, 0.04]} material={mats.shoe} castShadow />
-            <mesh material={mats.sole} position={[0, -0.39, 0.04]}>
-              <boxGeometry args={[0.1, 0.016, 0.165]} />
-            </mesh>
+            {/* oversized, rounded sneakers */}
+            <RoundedBox args={[0.125, 0.09, 0.21]} radius={0.042} smoothness={5} position={[0, -0.345, 0.055]} material={mats.shoe} castShadow />
+            <RoundedBox args={[0.13, 0.024, 0.215]} radius={0.011} position={[0, -0.386, 0.055]} material={mats.sole} />
           </group>
         </group>
       ))}
@@ -413,15 +363,38 @@ export function Character({
         <mesh material={mats.top} position={[0, 0.17, 0]} castShadow>
           <capsuleGeometry args={[0.165, 0.16, 8, 20]} />
         </mesh>
-        <mesh material={mats.topShade} position={[0, 0.3, -0.12]} rotation={[0.5, 0, 0]} castShadow>
-          <torusGeometry args={[0.1, 0.045, 10, 20]} />
-        </mesh>
-        <RoundedBox args={[0.2, 0.08, 0.04]} radius={0.02} position={[0, 0.1, 0.15]} material={mats.topShade} />
-        {[-1, 1].map((s) => (
-          <mesh key={s} material={mats.white} position={[s * 0.035, 0.24, 0.158]}>
-            <cylinderGeometry args={[0.005, 0.005, 0.08, 6]} />
-          </mesh>
-        ))}
+        {look.outfit === "hoodie" ? (
+          <>
+            <mesh material={mats.topShade} position={[0, 0.3, -0.12]} rotation={[0.5, 0, 0]} castShadow>
+              <torusGeometry args={[0.1, 0.045, 10, 20]} />
+            </mesh>
+            <RoundedBox args={[0.2, 0.08, 0.04]} radius={0.02} position={[0, 0.1, 0.15]} material={mats.topShade} />
+            {[-1, 1].map((s) => (
+              <mesh key={s} material={mats.white} position={[s * 0.035, 0.24, 0.158]}>
+                <cylinderGeometry args={[0.005, 0.005, 0.08, 6]} />
+              </mesh>
+            ))}
+          </>
+        ) : (
+          <>
+            {/* overalls: denim lower half, bib, straps with brass buttons */}
+            <mesh material={mats.pants} position={[0, 0.13, 0]} castShadow>
+              <sphereGeometry args={[0.172, 24, 14, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2]} />
+            </mesh>
+            <mesh material={mats.pants} position={[0, 0.13, 0]}>
+              <cylinderGeometry args={[0.172, 0.172, 0.04, 24]} />
+            </mesh>
+            <RoundedBox args={[0.19, 0.13, 0.03]} radius={0.012} position={[0, 0.17, 0.152]} rotation={[-0.08, 0, 0]} material={mats.pants} />
+            {[-1, 1].map((s) => (
+              <group key={s}>
+                <RoundedBox args={[0.04, 0.2, 0.022]} radius={0.008} position={[s * 0.068, 0.27, 0.13]} rotation={[-0.45, 0, 0]} material={mats.strap} />
+                <mesh material={mats.button} position={[s * 0.068, 0.215, 0.168]}>
+                  <sphereGeometry args={[0.015, 12, 10]} />
+                </mesh>
+              </group>
+            ))}
+          </>
+        )}
         {/* lanyard badge in team colour */}
         <mesh position={[0.07, 0.19, 0.165]} rotation={[0.1, 0, 0.08]}>
           <boxGeometry args={[0.045, 0.06, 0.006]} />
@@ -489,70 +462,91 @@ export function Character({
           </group>
         </Arm>
 
-        {/* head */}
+        {/* head: big, round and soft, with baby-chubby cheeks */}
         <group ref={head} position={[0, 0.56, 0.01]}>
           <mesh material={mats.skin} scale={[1, 0.94, 0.96]} castShadow>
-            <sphereGeometry args={[0.235, 36, 28]} />
+            <sphereGeometry args={[0.235, 44, 34]} />
           </mesh>
           {[-1, 1].map((s) => (
-            <mesh key={s} material={mats.skin} position={[s * 0.228, -0.01, 0]} scale={[0.5, 0.8, 0.6]}>
-              <sphereGeometry args={[0.06, 14, 12]} />
-            </mesh>
+            <group key={`ear${s}`} position={[s * 0.232, -0.025, 0]} rotation={[0, s * 0.35, 0]}>
+              <mesh material={mats.skin} scale={[0.45, 0.85, 0.7]}>
+                <sphereGeometry args={[0.07, 18, 14]} />
+              </mesh>
+              <mesh material={mats.skinShade} position={[s * 0.012, 0, 0.014]} scale={[0.28, 0.58, 0.42]}>
+                <sphereGeometry args={[0.07, 14, 10]} />
+              </mesh>
+            </group>
           ))}
 
           {look.beanie ? <Beanie color={accent} /> : <Hair look={look} mat={mats.hair} />}
 
           {/* face */}
           <group position={[0, -0.02, 0]}>
+            {[-1, 1].map((s) => (
+              <mesh key={`cheek${s}`} material={mats.skin} position={[s * 0.115, -0.085, 0.115]} scale={[1, 0.85, 0.9]}>
+                <sphereGeometry args={[0.1, 24, 18]} />
+              </mesh>
+            ))}
+            {/* big glossy eyes: white, coloured iris, pupil, two highlights, upper lashes */}
             <group ref={eyes}>
-              {eyeVisible &&
-                [-1, 1].map((s) => (
-                  <group key={s} position={[s * 0.082, 0, 0.205]}>
-                    <mesh material={mats.eye} scale={[0.035, 0.048, 0.018]}>
-                      <sphereGeometry args={[1, 18, 14]} />
+              {[-1, 1].map((s) => (
+                <group key={s} position={[s * 0.088, -0.015, 0.188]} rotation={[0, s * 0.3, 0]}>
+                  <mesh material={mats.sclera} scale={[0.058, 0.066, 0.036]}>
+                    <sphereGeometry args={[1, 24, 18]} />
+                  </mesh>
+                  <group position={[0, -0.004, 0.026]}>
+                    <mesh material={mats.iris} scale={[0.041, 0.046, 0.016]}>
+                      <sphereGeometry args={[1, 22, 16]} />
                     </mesh>
-                    <mesh material={mats.white} position={[0.01, 0.016, 0.014]}>
-                      <sphereGeometry args={[0.0095, 10, 8]} />
+                    <mesh material={mats.pupil} position={[0, 0, 0.009]} scale={[0.022, 0.025, 0.01]}>
+                      <sphereGeometry args={[1, 16, 12]} />
+                    </mesh>
+                    <mesh material={mats.white} position={[0.014, 0.017, 0.02]}>
+                      <sphereGeometry args={[0.011, 10, 8]} />
+                    </mesh>
+                    <mesh material={mats.white} position={[-0.012, -0.015, 0.019]}>
+                      <sphereGeometry args={[0.005, 8, 6]} />
                     </mesh>
                   </group>
-                ))}
-            </group>
-            {!eyeVisible &&
-              [-1, 1].map((s) => (
-                <mesh key={s} material={mats.eye} position={[s * 0.082, -0.005, 0.212]} rotation={[0, 0, 0]}>
-                  <torusGeometry args={[0.028, 0.0075, 8, 16, Math.PI]} />
-                </mesh>
+                  <mesh material={mats.lash} position={[0, 0.002, 0.012]} rotation={[0, 0, Math.PI * 0.14]} scale={[1, 1.12, 1]}>
+                    <torusGeometry args={[0.06, 0.0075, 6, 18, Math.PI * 0.72]} />
+                  </mesh>
+                  <mesh material={mats.lash} position={[s * 0.062, 0.03, 0.006]} rotation={[0, 0, -s * 0.9]}>
+                    <capsuleGeometry args={[0.005, 0.016, 4, 6]} />
+                  </mesh>
+                </group>
               ))}
-            {/* brows */}
+            </group>
+            {/* arched brows */}
             {[-1, 1].map((s) => (
-              <mesh
-                key={s}
-                material={mats.hair}
-                position={[s * 0.085, 0.075 + browLift, 0.2]}
-                rotation={[0, 0, Math.PI / 2 - s * browTilt]}
-              >
-                <capsuleGeometry args={[0.009, 0.04, 4, 8]} />
+              <mesh key={`brow${s}`} material={mats.brow} position={[s * 0.09, 0.07 + browLift, 0.207]} rotation={[-0.15, s * 0.3, Math.PI * 0.2 - s * browTilt]} scale={[1, 1, 0.6]}>
+                <torusGeometry args={[0.045, 0.0085, 6, 14, Math.PI * 0.6]} />
               </mesh>
             ))}
-            {/* cheeks */}
+            {/* button nose */}
+            <mesh material={mats.nose} position={[0, -0.075, 0.205]} scale={[1.15, 0.85, 0.8]}>
+              <sphereGeometry args={[0.026, 18, 14]} />
+            </mesh>
+            {/* rosy cheeks */}
             {[-1, 1].map((s) => (
-              <mesh key={s} material={mats.blush} position={[s * 0.135, -0.055, 0.19]} rotation={[0, s * 0.55, 0]}>
-                <circleGeometry args={[0.032, 20]} />
+              <mesh key={`blush${s}`} material={mats.blush} position={[s * 0.128, -0.08, 0.2]} rotation={[0.1, s * 0.5, 0]}>
+                <circleGeometry args={[0.04, 24]} />
               </mesh>
             ))}
-            {/* mouth */}
-            <Mouth expr={expr} mats={mats} />
+            <group position={[0, -0.118, 0.18]} rotation={[0.75, 0, 0]}>
+              <Mouth expr={expr} mats={mats} />
+            </group>
           </group>
 
           {look.glasses && (
-            <group position={[0, -0.02, 0.222]}>
+            <group position={[0, -0.035, 0.235]}>
               {[-1, 1].map((s) => (
-                <mesh key={s} material={mats.frame} position={[s * 0.082, 0, 0]}>
-                  <torusGeometry args={[0.05, 0.0065, 8, 28]} />
+                <mesh key={s} material={mats.frame} position={[s * 0.088, 0, 0]}>
+                  <torusGeometry args={[0.068, 0.007, 8, 32]} />
                 </mesh>
               ))}
-              <mesh material={mats.frame} position={[0, 0.005, 0]} rotation={[0, 0, Math.PI / 2]}>
-                <cylinderGeometry args={[0.005, 0.005, 0.064, 6]} />
+              <mesh material={mats.frame} position={[0, 0.008, 0]} rotation={[0, 0, Math.PI / 2]}>
+                <cylinderGeometry args={[0.005, 0.005, 0.04, 6]} />
               </mesh>
             </group>
           )}
@@ -620,44 +614,52 @@ export function Character({
   );
 }
 
+/** Mouth shapes, drawn on a plane tilted to follow the lower face. */
 function Mouth({ expr, mats }: { expr: Expression; mats: ReturnType<typeof useMaterials> }) {
-  const y = -0.085;
-  const z = 0.214;
   switch (expr) {
     case "happy":
+      // open, toothless grin with a little tongue
       return (
-        <mesh material={mats.mouth} position={[0, y + 0.012, z]} rotation={[0, 0, Math.PI]}>
-          <torusGeometry args={[0.03, 0.008, 8, 18, Math.PI]} />
-        </mesh>
+        <group>
+          <mesh material={mats.mouthDark} scale={[1, 0.75, 1]}>
+            <circleGeometry args={[0.036, 24, Math.PI, Math.PI]} />
+          </mesh>
+          <mesh material={mats.tongue} position={[0, -0.019, 0.001]} scale={[1, 0.55, 1]}>
+            <circleGeometry args={[0.018, 16]} />
+          </mesh>
+          <mesh material={mats.mouth} position={[0, 0, 0.001]} rotation={[0, 0, Math.PI / 2]}>
+            <capsuleGeometry args={[0.004, 0.068, 4, 6]} />
+          </mesh>
+        </group>
       );
     case "alert":
       return (
-        <mesh material={mats.mouth} position={[0, y - 0.005, z]} scale={[0.024, 0.03, 0.01]}>
-          <sphereGeometry args={[1, 14, 12]} />
+        <mesh material={mats.mouthDark} scale={[0.022, 0.028, 1]}>
+          <circleGeometry args={[1, 20]} />
         </mesh>
       );
     case "worried":
       return (
-        <mesh material={mats.mouth} position={[0, y - 0.018, z]}>
-          <torusGeometry args={[0.026, 0.007, 8, 18, Math.PI]} />
+        <mesh material={mats.mouth} position={[0, -0.01, 0]}>
+          <torusGeometry args={[0.022, 0.006, 8, 16, Math.PI]} />
         </mesh>
       );
     case "curious":
       return (
-        <mesh material={mats.mouth} position={[0.02, y, z]} rotation={[0, 0, Math.PI / 2 + 0.25]}>
-          <capsuleGeometry args={[0.007, 0.022, 4, 8]} />
+        <mesh material={mats.mouth} position={[0.012, 0, 0]} rotation={[0, 0, Math.PI + 0.35]}>
+          <torusGeometry args={[0.018, 0.006, 8, 16, Math.PI * 0.8]} />
         </mesh>
       );
     case "focused":
       return (
-        <mesh material={mats.mouth} position={[0, y, z]} rotation={[0, 0, Math.PI / 2]}>
-          <capsuleGeometry args={[0.0065, 0.026, 4, 8]} />
+        <mesh material={mats.mouth} rotation={[0, 0, Math.PI / 2]}>
+          <capsuleGeometry args={[0.006, 0.024, 4, 8]} />
         </mesh>
       );
     default:
       return (
-        <mesh material={mats.mouth} position={[0, y + 0.006, z]} rotation={[0, 0, Math.PI]}>
-          <torusGeometry args={[0.022, 0.007, 8, 18, Math.PI]} />
+        <mesh material={mats.mouth} position={[0, 0.008, 0]} rotation={[0, 0, Math.PI]}>
+          <torusGeometry args={[0.026, 0.0065, 8, 18, Math.PI]} />
         </mesh>
       );
   }
