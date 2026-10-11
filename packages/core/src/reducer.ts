@@ -169,6 +169,92 @@ function processSubagentTranscriptLine(subagent: Subagent, line: any): Subagent 
   return next;
 }
 
+// ── Antigravity ──────────────────────────────────────────────
+// Antigravity writes one JSON step per line to brain/<id>/.system_generated/logs/transcript.jsonl.
+// The format is not a public API: unknown step types and odd field shapes leave the session as it was.
+
+/** Plain text of a step's content, which may be a string or a list of parts. */
+function stepText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((c: any) => (typeof c === "string" ? c : typeof c?.text === "string" ? c.text : ""))
+    .filter(Boolean)
+    .join("\n");
+}
+
+/** The user's own words, when the prompt wraps them in a <USER_REQUEST> block. */
+function userRequest(text: string): string {
+  const m = /<USER_REQUEST>([\s\S]*?)<\/USER_REQUEST>/.exec(text);
+  return (m ? m[1] : text).trim();
+}
+
+function processAntigravityStep(session: Session, step: any): Session {
+  if (!step || typeof step !== "object") return session;
+  const parsed = Date.parse(step.created_at);
+  const timestamp = Number.isNaN(parsed) ? Date.now() : parsed;
+  // A step may be written again as it finishes; its feed entry is then replaced.
+  const id = typeof step.step_index === "number" ? `step-${step.step_index}` : String(timestamp);
+  const next = { ...session };
+  let event: Omit<FeedEvent, "id"> | null = null;
+  const clearTool = () => {
+    next.currentTool = undefined;
+    next.toolStartedAt = undefined;
+  };
+
+  switch (step.type) {
+    case "USER_INPUT": {
+      const prompt = userRequest(stepText(step.content));
+      next.state = "thinking";
+      clearTool();
+      if (prompt) {
+        next.lastPrompt = prompt;
+        next.title ??= truncate(prompt, 60);
+        event = { role: "user", type: "text", excerpt: truncate(prompt, 100) };
+      }
+      break;
+    }
+    case "PLANNER_RESPONSE": {
+      if (step.tool_calls !== undefined && !Array.isArray(step.tool_calls)) return session;
+      const tool = (step.tool_calls ?? []).map((c: any) => c?.name).find((n: unknown) => typeof n === "string" && n);
+      if (tool) {
+        next.state = "working";
+        next.currentTool = tool;
+        next.toolStartedAt = timestamp;
+        event = { role: "assistant", type: "tool_use", excerpt: `Used tool: ${tool}` };
+      } else {
+        // No tool call: the model is still answering, or its answer ends the turn.
+        next.state = step.status === "RUNNING" ? "thinking" : "idle";
+        clearTool();
+        const text = stepText(step.content);
+        if (text) event = { role: "assistant", type: "text", excerpt: truncate(text, 100) };
+      }
+      break;
+    }
+    case "GENERIC": {
+      // Tool output; other generic steps outside a tool call say nothing about state.
+      if (!session.currentTool) return session;
+      event = { role: "user", type: "tool_result", excerpt: `Tool finished: ${session.currentTool}` };
+      next.state = "thinking";
+      clearTool();
+      break;
+    }
+    case "ERROR_MESSAGE": {
+      next.state = "error";
+      clearTool();
+      event = { role: "user", type: "error", excerpt: truncate(stepText(step.content) || "Agent error.", 100) };
+      break;
+    }
+    default:
+      return session;
+  }
+
+  next.lastActivityAt = timestamp;
+  next.onBreak = false;
+  if (event) next.feed = [...next.feed.filter((e) => e.id !== id), { id, ...event }].slice(-20);
+  return next;
+}
+
 function computeOfficeState(office: Office, now?: number): Office {
   let waitingCount = 0;
   let changed = false;
@@ -257,6 +343,7 @@ export function reduce(office: Office, event: DomainEvent): Office {
             ...office.sessions,
             [event.pid]: {
               pid: event.pid,
+              agent: event.agent ?? "claude",
               sessionId: event.sessionId,
               cwd: event.cwd,
               name: event.name,
@@ -268,6 +355,14 @@ export function reduce(office: Office, event: DomainEvent): Office {
             },
           },
         };
+      }
+      break;
+    }
+
+    case "session_workspace": {
+      const session = office.sessions[event.pid];
+      if (session) {
+        next = { ...office, sessions: { ...office.sessions, [event.pid]: { ...session, cwd: event.cwd, projectKey: event.projectKey } } };
       }
       break;
     }
@@ -312,7 +407,7 @@ export function reduce(office: Office, event: DomainEvent): Office {
           ...office,
           sessions: {
             ...office.sessions,
-            [event.pid]: processTranscriptLine(session, event.line),
+            [event.pid]: session.agent === "antigravity" ? processAntigravityStep(session, event.line) : processTranscriptLine(session, event.line),
           },
         };
       }

@@ -6,6 +6,12 @@
  */
 export type AgentState = "working" | "thinking" | "idle" | "error" | "ended" | "waiting_on_user";
 
+/**
+ * Agent Kind — which AI coding agent a Session belongs to. Each kind has its own
+ * office room and its own transcript format.
+ */
+export type AgentKind = "claude" | "antigravity";
+
 export interface FeedEvent {
   id: string;
   role: "user" | "assistant";
@@ -29,8 +35,13 @@ export interface Subagent {
  * Maps to a character at a desk in the 3D office.
  */
 export interface Session {
-  /** Claude Code process ID (unique while alive). */
+  /**
+   * Claude Code process ID (unique while alive). Agents without a process registry
+   * (Antigravity) get a synthetic negative id from their adapter instead.
+   */
   pid: number;
+  /** Which agent this is; decides the room and how transcript lines are read. */
+  agent: AgentKind;
   /** Stable session UUID assigned by Claude Code. */
   sessionId: string;
   /** Working directory of the session. */
@@ -93,6 +104,19 @@ export interface SessionAppeared {
   name: string;
   projectKey: string;
   startedAt: number;
+  /** Defaults to "claude", the only kind with a session registry. */
+  agent?: AgentKind;
+}
+
+/**
+ * An adapter learned where a session works after it appeared (Antigravity has no
+ * cwd in its registry, so it is found from the paths its tools touch).
+ */
+export interface SessionWorkspace {
+  type: "session_workspace";
+  pid: number;
+  cwd: string;
+  projectKey: string;
 }
 
 /**
@@ -161,6 +185,7 @@ export interface HookEvent {
 
 export type DomainEvent =
   | SessionAppeared
+  | SessionWorkspace
   | SessionEnded
   | SessionStatus
   | TranscriptLine

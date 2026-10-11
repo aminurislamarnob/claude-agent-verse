@@ -1,10 +1,21 @@
-import type { AgentState, Office } from "../types";
+import type { AgentKind, AgentState, Office } from "../types";
 import { stateColor, stateLabel } from "../scene/theme";
+import { ROOMS, roomOf, waitingIn } from "../scene/rooms";
 
 const ORDER: AgentState[] = ["waiting_on_user", "working", "thinking", "error", "idle"];
 
-export function TopBar({ office, connected, preview }: { office: Office; connected: boolean; preview: boolean }) {
-  const sessions = Object.values(office.sessions);
+interface TopBarProps {
+  /** The whole office: tabs count every room, the rest describes the room on screen. */
+  office: Office;
+  room: AgentKind;
+  onRoomChange: (room: AgentKind) => void;
+  connected: boolean;
+  preview: boolean;
+}
+
+export function TopBar({ office, room, onRoomChange, connected, preview }: TopBarProps) {
+  const all = Object.values(office.sessions);
+  const sessions = all.filter((s) => roomOf(s) === room);
   const counts = new Map<AgentState, number>();
   let interns = 0;
   const onBreak = sessions.filter((s) => s.onBreak).length;
@@ -34,6 +45,28 @@ export function TopBar({ office, connected, preview }: { office: Office; connect
           </div>
         </div>
       </div>
+      <nav className="room-tabs" role="tablist" aria-label="Rooms">
+        {ROOMS.map((r) => {
+          const inRoom = all.filter((s) => roomOf(s) === r.kind);
+          const waiting = waitingIn(inRoom);
+          const active = r.kind === room;
+          return (
+            <button
+              key={r.kind}
+              role="tab"
+              aria-selected={active}
+              className={`room-tab ${active ? "room-tab--active" : ""}`}
+              style={{ ["--room" as string]: r.accent }}
+              onClick={() => onRoomChange(r.kind)}
+            >
+              <span className="room-tab__swatch" />
+              {r.name}
+              <span className="room-tab__count">{inRoom.length}</span>
+              {waiting > 0 && <span className="room-tab__alert">{waiting} waiting</span>}
+            </button>
+          );
+        })}
+      </nav>
       <div className="state-summary">
         {ORDER.map((st) => {
           const n = counts.get(st) ?? 0;

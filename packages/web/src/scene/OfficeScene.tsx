@@ -4,7 +4,7 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Environment, Lightformer, OrbitControls, OrthographicCamera, RoundedBox } from "@react-three/drei";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import type { Office } from "../types";
-import { createAllocators, planFloor, routeToBreak, type BreakSpot, type FloorPlan, type Pod } from "./layout";
+import { createAllocators, planFloor, routeToBreak, type Allocators, type BreakSpot, type FloorPlan, type Pod } from "./layout";
 import { BreakAllocator, BreakPresence } from "./breaks";
 import { BeanBag, Room } from "./Room";
 import { Label, LabelLayer } from "./Label";
@@ -12,6 +12,7 @@ import { FloorPlant } from "./Props";
 import { Workstation, type Focus } from "./Workstation";
 import { palette, teamColor } from "./theme";
 import { signTexture } from "./textures";
+import type { RoomTheme } from "./rooms";
 
 export type { Focus } from "./Workstation";
 
@@ -172,7 +173,7 @@ function focusPoint(plan: FloorPlan, focus: Focus, breaks: Map<number, BreakSpot
   return null;
 }
 
-function CameraRig({ plan, breaks, focus, insetRight }: { plan: FloorPlan; breaks: Map<number, BreakSpot>; focus: Focus; insetRight: number }) {
+function CameraRig({ room, plan, breaks, focus, insetRight }: { room: string; plan: FloorPlan; breaks: Map<number, BreakSpot>; focus: Focus; insetRight: number }) {
   const { camera, size, controls, invalidate } = useThree() as unknown as {
     camera: THREE.OrthographicCamera;
     size: { width: number; height: number };
@@ -181,7 +182,8 @@ function CameraRig({ plan, breaks, focus, insetRight }: { plan: FloorPlan; break
   };
   const goal = useRef<{ target: THREE.Vector3; zoom: number } | null>(null);
   const frame = frameRoom(plan, size.width, size.height, { right: insetRight, top: 72 });
-  const boundsKey = `${plan.minX},${plan.maxX},${plan.minZ},${plan.maxZ},${size.width},${size.height},${insetRight}`;
+  // Switching rooms re-frames even when both rooms happen to be the same size.
+  const boundsKey = `${room},${plan.minX},${plan.maxX},${plan.minZ},${plan.maxZ},${size.width},${size.height},${insetRight}`;
   const focusKey = focus ? `${focus.pid}:${focus.subagentId ?? ""}:${breaks.get(focus.pid)?.id ?? ""}` : "";
 
   useEffect(() => {
@@ -300,20 +302,26 @@ function Lights({ plan }: { plan: FloorPlan }) {
 
 export function OfficeScene({
   office,
+  room,
   focus,
   onSelect,
   insetRight = 0,
 }: {
+  /** The sessions in the room on screen. */
   office: Office;
+  room: RoomTheme;
   focus: Focus;
   onSelect: (f: Focus) => void;
   /** Pixels on the right covered by HUD panels; the camera frames the remaining area. */
   insetRight?: number;
 }) {
-  const allocators = useRef(createAllocators());
-  const plan = useMemo(() => planFloor(office, allocators.current), [office]);
-  const breakAlloc = useRef(new BreakAllocator());
-  const breaks = useMemo(() => breakAlloc.current.sync(Object.values(office.sessions), plan.amenities.spots), [office, plan]);
+  // Each room keeps its own sticky desk and break slots, so switching back finds everyone where they were.
+  const rooms = useRef(new Map<string, { desks: Allocators; breaks: BreakAllocator }>());
+  let slots = rooms.current.get(room.kind);
+  if (!slots) rooms.current.set(room.kind, (slots = { desks: createAllocators(), breaks: new BreakAllocator() }));
+  const { desks, breaks: breakAlloc } = slots;
+  const plan = useMemo(() => planFloor(office, desks), [office, desks]);
+  const breaks = useMemo(() => breakAlloc.sync(Object.values(office.sessions), plan.amenities.spots), [office, plan, breakAlloc]);
   const presence = useMemo(() => new Set<string>(), []);
 
   const [visible, setVisible] = useState(document.visibilityState === "visible");
@@ -357,13 +365,13 @@ export function OfficeScene({
           maxZoom={260}
           screenSpacePanning
         />
-        <CameraRig plan={plan} breaks={breaks} focus={focus} insetRight={insetRight} />
+        <CameraRig room={room.kind} plan={plan} breaks={breaks} focus={focus} insetRight={insetRight} />
         <FrameDriver fps={fps} />
         <ShadowBudget version={office} />
         <ZoomWatcher threshold={72} onChange={setFar} />
         <Lights plan={plan} />
         <BreakPresence.Provider value={presence}>
-          <Room plan={plan} />
+          <Room plan={plan} theme={room} />
           {plan.pods.map((pod) => (
             <PodZone key={pod.projectKey} pod={pod} plan={plan} breaks={breaks} focus={focus} onSelect={onSelect} far={far} />
           ))}

@@ -10,6 +10,9 @@ import { scan, emptyScanSnapshot, claudeHome, projectSlug } from "./scanner.js";
 import type { ScanSnapshot } from "./scanner.js";
 import { generateToken, generateHookToken, isAllowedOrigin, isValidToken, isValidHookToken } from "./auth.js";
 import { FileTailer } from "./tailer.js";
+import { emptyAgScanSnapshot, scanAntigravity, toolPathFromStep, workspaceDir } from "./antigravity.js";
+import type { AgScanSnapshot } from "./antigravity.js";
+import { getProjectKey } from "./projectKey.js";
 
 const HOST = "127.0.0.1";
 const PORT = parseInt(process.env.PORT ?? "4800", 10);
@@ -26,6 +29,7 @@ const WEB_DIST = join(__dirname, "..", "..", "web", "dist");
 
 let office: Office = emptyOffice();
 let scanSnapshot: ScanSnapshot = emptyScanSnapshot();
+let agSnapshot: AgScanSnapshot = emptyAgScanSnapshot();
 const tailers = new Map<number, { sessionId: string; tailer: FileTailer }>();
 /** Subagent transcripts untouched for this long belong to finished work and are skipped. */
 const SUBAGENT_STALE_MS = 10 * 60_000;
@@ -164,8 +168,10 @@ let latestEventTime = Date.now();
 
 function dispatch(event: DomainEvent): void {
   if (event.type === "transcript_line" || event.type === "subagent_transcript_line") {
-    if (event.line.timestamp) {
-      latestEventTime = Math.max(latestEventTime, new Date(event.line.timestamp).getTime());
+    // Claude lines carry `timestamp`, Antigravity steps `created_at`.
+    const at = event.line?.timestamp ?? event.line?.created_at;
+    if (at) {
+      latestEventTime = Math.max(latestEventTime, new Date(at).getTime());
     }
   }
 
@@ -173,14 +179,15 @@ function dispatch(event: DomainEvent): void {
   office = reduce(office, event);
 
   if (event.type === "session_appeared") {
-    tailTranscript(event.pid, event.cwd, event.sessionId);
+    if (event.agent === "antigravity") tailAntigravity(event.pid, event.sessionId);
+    else tailTranscript(event.pid, claudeTranscriptPath(event.cwd, event.sessionId), event.sessionId);
   } else if (event.type === "session_status") {
     // A new conversation in the same process writes to a new transcript file.
     const current = tailers.get(event.pid);
     const session = office.sessions[event.pid];
     if (session && current && current.sessionId !== event.sessionId) {
       stopSubagents(event.pid);
-      tailTranscript(event.pid, session.cwd, event.sessionId);
+      tailTranscript(event.pid, claudeTranscriptPath(session.cwd, event.sessionId), event.sessionId);
     }
   } else if (event.type === "session_ended") {
     const current = tailers.get(event.pid);
@@ -206,17 +213,40 @@ function scheduleSnapshot(): void {
   }, 100);
 }
 
-function tailTranscript(pid: number, cwd: string, sessionId: string): void {
+function claudeTranscriptPath(cwd: string, sessionId: string): string {
+  return join(claudeHome(), "projects", projectSlug(cwd), `${sessionId}.jsonl`);
+}
+
+function tailTranscript(pid: number, transcriptPath: string, sessionId: string, onLine?: (line: any) => void): void {
   tailers.get(pid)?.tailer.stop();
-  const transcriptPath = join(claudeHome(), "projects", projectSlug(cwd), `${sessionId}.jsonl`);
   const tailer = new FileTailer(transcriptPath);
   tailers.set(pid, { sessionId, tailer });
   tailer.on("line", (line) => {
     // Lines from a transcript we've since switched away from are stale.
-    if (tailers.get(pid)?.tailer === tailer) dispatch({ type: "transcript_line", pid, line });
+    if (tailers.get(pid)?.tailer !== tailer) return;
+    dispatch({ type: "transcript_line", pid, line });
+    onLine?.(line);
   });
   tailer.start().catch((err) => {
     console.error(`[tailer] Failed to start tailing for pid ${pid}:`, err);
+  });
+}
+
+/** Tails an Antigravity conversation and moves it to its project pod once a tool call names its workspace. */
+function tailAntigravity(pid: number, conversationId: string): void {
+  const conversation = agSnapshot.conversations.get(conversationId);
+  if (!conversation) return;
+  let resolving = false;
+  tailTranscript(pid, conversation.transcriptPath, conversationId, (line) => {
+    if (resolving) return;
+    const path = toolPathFromStep(line);
+    if (!path) return;
+    resolving = true;
+    workspaceDir(path)
+      .then(async (cwd) => ({ cwd, projectKey: await getProjectKey(cwd) }))
+      .then(({ cwd, projectKey }) => {
+        if (office.sessions[pid]?.sessionId === conversationId) dispatch({ type: "session_workspace", pid, cwd, projectKey });
+      });
   });
 }
 
@@ -246,8 +276,14 @@ async function poll(): Promise<void> {
       dispatch(event);
     }
 
+    const ag = await scanAntigravity(agSnapshot);
+    // The snapshot must be current before dispatch, which looks up the transcript path.
+    agSnapshot = ag.snapshot;
+    for (const event of ag.events) dispatch(event);
+
     // Discover subagents for active sessions
     for (const session of Object.values(office.sessions)) {
+      if (session.agent !== "claude") continue;
       // Subagent transcripts live beside the session's own: projects/<slug>/<sessionId>/subagents
       const subagentsDir = join(claudeHome(), "projects", projectSlug(session.cwd), session.sessionId, "subagents");
       try {

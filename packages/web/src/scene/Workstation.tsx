@@ -28,7 +28,7 @@ const ACTIVE: AgentState[] = ["working", "thinking", "waiting_on_user", "error"]
 /** Screen content follows what the agent is doing; the seed keeps neighbours varied. */
 function screenFor(state: AgentState | null, tool: string | undefined, seed: number): ScreenKind {
   if (state === "working" && tool) {
-    if (/bash|terminal|shell/i.test(tool)) return "terminal";
+    if (/bash|terminal|shell|command/i.test(tool)) return "terminal";
     if (/web|fetch|browser|chrome|search/i.test(tool)) return "browser";
   }
   return (["code", "code", "design", "dashboard", "code", "browser"] as const)[seed % 6];

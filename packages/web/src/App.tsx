@@ -1,12 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { OfficeScene, type Focus } from "./scene/OfficeScene";
 import { InspectorPanel } from "./hud/InspectorPanel";
 import { TopBar } from "./hud/TopBar";
 import { AgentList } from "./hud/AgentList";
 import { isPreview, subscribePreview } from "./preview";
-import type { Office } from "./types";
+import { ROOMS, officeInRoom, roomTheme } from "./scene/rooms";
+import type { AgentKind, Office } from "./types";
 
-export type { AgentState, FeedEvent, Office, Session, Subagent } from "./types";
+export type { AgentKind, AgentState, FeedEvent, Office, Session, Subagent } from "./types";
 
 // ── WebSocket hook ───────────────────────────────────────────
 
@@ -103,6 +104,32 @@ function useFaviconBadge(waitingCount: number): void {
   }, [waitingCount]);
 }
 
+// ── Active room ──────────────────────────────────────────────
+
+const ROOM_KEY = "agent-verse:room";
+
+/** The room on screen, remembered per browser so a reload comes back to it. */
+function useRoom(): [AgentKind, (room: AgentKind) => void] {
+  const [room, setRoom] = useState<AgentKind>(() => {
+    try {
+      const saved = localStorage.getItem(ROOM_KEY);
+      if (ROOMS.some((r) => r.kind === saved)) return saved as AgentKind;
+    } catch {
+      // storage blocked; start in the first room
+    }
+    return ROOMS[0].kind;
+  });
+  const choose = useCallback((next: AgentKind) => {
+    setRoom(next);
+    try {
+      localStorage.setItem(ROOM_KEY, next);
+    } catch {
+      // not remembered, still switched
+    }
+  }, []);
+  return [room, choose];
+}
+
 function useMediaQuery(query: string): boolean {
   const [match, setMatch] = useState(() => window.matchMedia(query).matches);
   useEffect(() => {
@@ -120,12 +147,16 @@ export function App() {
   const { office, connected } = useOffice();
   const [focus, setFocus] = useState<Focus>(null);
   const [listOpen, setListOpen] = useState(true);
+  const [room, setRoom] = useRoom();
+  const theme = roomTheme(room);
+  // Only the room on screen is rendered and listed; the tab title still counts every room.
+  const roomOffice = useMemo(() => officeInRoom(office, room), [office, room]);
 
   const wide = useMediaQuery("(min-width: 901px)");
   useTabTitle(office.waitingCount);
   useFaviconBadge(office.waitingCount);
 
-  const focusedSession = focus ? office.sessions[focus.pid] : undefined;
+  const focusedSession = focus ? roomOffice.sessions[focus.pid] : undefined;
   useEffect(() => {
     if (focus && !focusedSession) setFocus(null);
   }, [focus, focusedSession]);
@@ -134,15 +165,24 @@ export function App() {
   return (
     <div className="app-shell">
       <div className="scene">
-        <OfficeScene office={office} focus={focus} onSelect={setFocus} insetRight={sideOpen && wide ? 380 : 0} />
+        <OfficeScene office={roomOffice} room={theme} focus={focus} onSelect={setFocus} insetRight={sideOpen && wide ? 380 : 0} />
       </div>
 
-      <TopBar office={office} connected={connected} preview={isPreview} />
+      <TopBar
+        office={office}
+        room={room}
+        onRoomChange={(next) => {
+          setFocus(null);
+          setRoom(next);
+        }}
+        connected={connected}
+        preview={isPreview}
+      />
 
-      {Object.keys(office.sessions).length === 0 && (
+      {Object.keys(roomOffice.sessions).length === 0 && (
         <div className="empty-state">
-          <h2>The office is quiet</h2>
-          <p>Start a Claude Code session and its agent will walk in within a second.</p>
+          <h2>The {theme.name} room is quiet</h2>
+          <p>{theme.hint}</p>
         </div>
       )}
 
@@ -156,12 +196,12 @@ export function App() {
             onFocusSession={() => setFocus({ pid: focusedSession.pid })}
           />
         ) : (
-          listOpen && <AgentList office={office} onSelect={setFocus} onClose={() => setListOpen(false)} />
+          listOpen && <AgentList office={roomOffice} onSelect={setFocus} onClose={() => setListOpen(false)} />
         )}
       </aside>
       {!listOpen && !focusedSession && (
         <button className="side-toggle" onClick={() => setListOpen(true)}>
-          Agents <span>{Object.keys(office.sessions).length}</span>
+          Agents <span>{Object.keys(roomOffice.sessions).length}</span>
         </button>
       )}
     </div>

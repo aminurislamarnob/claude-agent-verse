@@ -1,4 +1,5 @@
 export type {
+  AgentKind,
   AgentState,
   Session,
   Office,
@@ -7,6 +8,7 @@ export type {
   TranscriptLine,
   SessionEnded,
   SessionStatus,
+  SessionWorkspace,
   Subagent,
   SubagentAppeared,
   SubagentEnded,

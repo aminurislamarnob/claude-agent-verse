@@ -14,6 +14,7 @@ A local, browser-based 3D office for watching the Claude Code sessions running o
 
 - The user's global Claude Code settings change only through the hook `install` / `uninstall` commands, run by the user. During development, register the hook forwarder in a throwaway settings file.
 - Read only the session registry JSON entries and transcripts. The per-session key/token files beside the registry entries are credentials: leave them unopened.
+- In `~/.gemini`, read only Antigravity's `brain/*/.system_generated/logs/transcript.jsonl`. The same folder holds OAuth credentials and settings.
 - Commit only scrubbed fixtures: synthetic paths, project names and content. Real transcripts stay on the machine.
 - The server binds to 127.0.0.1 and requires the Origin check plus tokens (from #3 onward). Keep every new endpoint behind them.
 - Claude Code's on-disk formats are not a public API: adapters skip unknown event types and fields rather than throwing.
