@@ -10,7 +10,7 @@ import { scan, emptyScanSnapshot, claudeHome, projectSlug } from "./scanner.js";
 import type { ScanSnapshot } from "./scanner.js";
 import { generateToken, generateHookToken, isAllowedOrigin, isValidToken, isValidHookToken } from "./auth.js";
 import { FileTailer } from "./tailer.js";
-import { emptyAgScanSnapshot, scanAntigravity, workspaceFromStep } from "./antigravity.js";
+import { emptyAgScanSnapshot, scanAntigravity, toolPathFromStep, workspaceDir } from "./antigravity.js";
 import type { AgScanSnapshot } from "./antigravity.js";
 import { getProjectKey } from "./projectKey.js";
 
@@ -239,12 +239,14 @@ function tailAntigravity(pid: number, conversationId: string): void {
   let resolving = false;
   tailTranscript(pid, conversation.transcriptPath, conversationId, (line) => {
     if (resolving) return;
-    const dir = workspaceFromStep(line);
-    if (!dir) return;
+    const path = toolPathFromStep(line);
+    if (!path) return;
     resolving = true;
-    getProjectKey(dir).then((projectKey) => {
-      if (office.sessions[pid]?.sessionId === conversationId) dispatch({ type: "session_workspace", pid, cwd: dir, projectKey });
-    });
+    workspaceDir(path)
+      .then(async (cwd) => ({ cwd, projectKey: await getProjectKey(cwd) }))
+      .then(({ cwd, projectKey }) => {
+        if (office.sessions[pid]?.sessionId === conversationId) dispatch({ type: "session_workspace", pid, cwd, projectKey });
+      });
   });
 }
 

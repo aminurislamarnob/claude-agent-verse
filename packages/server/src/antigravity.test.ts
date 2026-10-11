@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { emptyOffice, reduce } from "@claude-agent-verse/core";
 import type { Office } from "@claude-agent-verse/core";
-import { AG_LIVE_MS, emptyAgScanSnapshot, scanAntigravity, workspaceFromStep } from "./antigravity.js";
+import { AG_LIVE_MS, emptyAgScanSnapshot, scanAntigravity, toolPathFromStep, workspaceDir } from "./antigravity.js";
 
 const FIXTURE = fileURLToPath(
   new URL("../fixtures/basic/gemini/antigravity/brain/7c1f0a52-3e9b-4d1a-9f60-2b8e5d4c1a90/.system_generated/logs/transcript.jsonl", import.meta.url),
@@ -87,7 +87,7 @@ describe("scanAntigravity", () => {
   });
 });
 
-describe("workspaceFromStep", () => {
+describe("toolPathFromStep", () => {
   beforeEach(() => {
     process.env.ANTIGRAVITY_HOME = "/home/dev/.gemini";
   });
@@ -97,22 +97,63 @@ describe("workspaceFromStep", () => {
 
   const call = (args: unknown) => ({ type: "PLANNER_RESPONSE", tool_calls: [{ name: "tool", args }] });
 
-  it("prefers a command's working directory", () => {
-    expect(workspaceFromStep(call({ CommandLine: "pnpm test", Cwd: "/work/acme-app" }))).toBe("/work/acme-app");
+  it("prefers a command's working directory over the file it touches", () => {
+    expect(toolPathFromStep(call({ CommandLine: "pnpm test", Cwd: "/work/acme-app" }))).toBe("/work/acme-app");
+    expect(toolPathFromStep(call({ TargetFile: "/work/acme-app/src/theme.ts", Cwd: "/work/acme-app" }))).toBe("/work/acme-app");
   });
 
-  it("uses the folder of a file the agent edits", () => {
-    expect(workspaceFromStep(call({ TargetFile: "/work/acme-app/src/theme.ts" }))).toBe("/work/acme-app/src");
+  it("names the file the agent edits, as written", () => {
+    expect(toolPathFromStep(call({ TargetFile: "/work/acme-app/src/theme.ts" }))).toBe("/work/acme-app/src/theme.ts");
   });
 
   it("reads arguments sent as a JSON string", () => {
-    expect(workspaceFromStep(call(JSON.stringify({ DirectoryPath: "/work/acme-app" })))).toBe("/work/acme-app");
+    expect(toolPathFromStep(call(JSON.stringify({ DirectoryPath: "/work/acme-app" })))).toBe("/work/acme-app");
   });
 
   it("ignores Antigravity's own brain folder, relative paths and steps without tools", () => {
-    expect(workspaceFromStep(call({ TargetFile: "/home/dev/.gemini/antigravity/brain/abc/task.md" }))).toBeUndefined();
-    expect(workspaceFromStep(call({ TargetFile: "src/theme.ts" }))).toBeUndefined();
-    expect(workspaceFromStep({ type: "USER_INPUT", content: "/work/acme-app" })).toBeUndefined();
-    expect(workspaceFromStep(null)).toBeUndefined();
+    expect(toolPathFromStep(call({ TargetFile: "/home/dev/.gemini/antigravity/brain/abc/task.md" }))).toBeUndefined();
+    expect(toolPathFromStep(call({ TargetFile: "src/theme.ts" }))).toBeUndefined();
+    expect(toolPathFromStep({ type: "USER_INPUT", content: "/work/acme-app" })).toBeUndefined();
+    expect(toolPathFromStep(null)).toBeUndefined();
+  });
+});
+
+describe("workspaceDir", () => {
+  let root: string;
+  let app: string;
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "agent-verse-ws-"));
+    app = join(root, "acme-app");
+    await mkdir(join(app, "src"), { recursive: true });
+    await mkdir(join(root, "acme.app"), { recursive: true });
+    await writeFile(join(app, "Makefile"), "");
+    await writeFile(join(app, ".env"), "");
+    await writeFile(join(app, "src", "theme.ts"), "");
+  });
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("keeps a folder, even one with a dot in its name", async () => {
+    expect(await workspaceDir(app)).toBe(app);
+    expect(await workspaceDir(join(root, "acme.app"))).toBe(join(root, "acme.app"));
+  });
+
+  it("uses the folder of a file, even one without an extension", async () => {
+    expect(await workspaceDir(join(app, "src", "theme.ts"))).toBe(join(app, "src"));
+    expect(await workspaceDir(join(app, "Makefile"))).toBe(app);
+    expect(await workspaceDir(join(app, ".env"))).toBe(app);
+  });
+
+  it("uses the nearest existing folder for a file about to be written", async () => {
+    expect(await workspaceDir(join(app, "src", "new.ts"))).toBe(join(app, "src"));
+    expect(await workspaceDir(join(app, "src", "theme", "dark.ts"))).toBe(join(app, "src"));
+  });
+
+  it("reads a path that is not on this machine by its name", async () => {
+    const elsewhere = join("/", `agent-verse-nowhere-${Date.now()}`, "proj");
+    expect(await workspaceDir(join(elsewhere, "src", "x.ts"))).toBe(join(elsewhere, "src"));
+    expect(await workspaceDir(elsewhere)).toBe(elsewhere);
   });
 });

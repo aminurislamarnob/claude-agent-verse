@@ -234,7 +234,7 @@ describe("reducer", () => {
     it("yields the same Office as continuous observation", () => {
       // Continuous observation
       let office = emptyOffice();
-      office = reduce(office, appeared({ state: "idle" }));
+      office = reduce(office, appeared());
       office = reduce(office, {
         type: "transcript_line",
         pid: 1001,
@@ -282,7 +282,7 @@ describe("reducer", () => {
 
       // Catch-up (all at once)
       const catchUpOffice = officeWith(
-        appeared({ state: "idle" }),
+        appeared(),
         {
           type: "transcript_line",
           pid: 1001,
