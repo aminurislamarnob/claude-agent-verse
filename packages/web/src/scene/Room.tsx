@@ -1,13 +1,30 @@
-import { useMemo, useRef } from "react";
+import { useContext, useMemo, useRef, type ReactNode } from "react";
 import * as THREE from "three";
 import { useFrame, type ThreeElements } from "@react-three/fiber";
 import { RoundedBox } from "@react-three/drei";
 import { DeskPlant, FloorPlant, Mug } from "./Props";
-import { palette } from "./theme";
-import { nameplateTexture, posterTexture, screenTexture, skylineTexture, whiteboardTexture, woodTexture } from "./textures";
+import { hash, palette } from "./theme";
+import { nameplateTexture, posterTexture, screenTexture, skylineTexture, tileTexture, whiteboardTexture, woodTexture } from "./textures";
 import { COFFEE_TABLE, LOUNGE, type FloorPlan } from "./layout";
 import { HighTable, PlayZone } from "./PlayZone";
 import { StaticBatch } from "./StaticBatch";
+import { DaylightContext, type SkyLook } from "./daylight";
+import {
+  ACUnit,
+  ArcLamp,
+  CoatStand,
+  DoorMat,
+  ExitSign,
+  FireExtinguisher,
+  FruitBowl,
+  Kettle,
+  Pendant,
+  PrinterStation,
+  RecyclingBins,
+  WallClock,
+  WallSwitches,
+  WaterCooler,
+} from "./Fixtures";
 import type { RoomTheme } from "./rooms";
 
 type GroupProps = ThreeElements["group"];
@@ -15,15 +32,25 @@ type GroupProps = ThreeElements["group"];
 const WALL_H = 3.1;
 const WALL_T = 0.14;
 const SLAB = 0.35;
+/** Window band on the west wall: sill and head heights. */
+const SILL = 0.5;
+const HEAD = 2.75;
+/** Length of west wall at the front kept solid for the entrance. */
+const DOOR_SECTION = 2.3;
+const DOOR_W = 1.0;
+const DOOR_H = 2.2;
+const FRAME = "#2a2d33";
 
 // ── Shell ────────────────────────────────────────────────────
 
 function Floor({ plan }: { plan: FloorPlan }) {
   const w = plan.maxX - plan.minX + 1;
   const d = plan.maxZ - plan.minZ + 1;
-  const tex = useMemo(() => {
+  const { map, bump } = useMemo(() => {
     const t = woodTexture();
-    t.repeat.set(w / 3, d / 3);
+    // planks run along x; three units of floor per copy of the texture
+    t.map.repeat.set(w / 3, d / 3);
+    t.bump.repeat.set(w / 3, d / 3);
     return t;
   }, [w, d]);
   const cx = (plan.minX + plan.maxX + 1) / 2;
@@ -32,7 +59,7 @@ function Floor({ plan }: { plan: FloorPlan }) {
     <group position={[cx, 0, cz]}>
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
         <planeGeometry args={[w, d]} />
-        <meshStandardMaterial map={tex} roughness={0.72} />
+        <meshStandardMaterial map={map} bumpMap={bump} bumpScale={0.6} roughness={0.58} />
       </mesh>
       {/* diorama slab */}
       <RoundedBox args={[w + 0.02, SLAB, d + 0.02]} radius={0.05} position={[0, -SLAB / 2 - 0.004, 0]} receiveShadow>
@@ -46,12 +73,189 @@ function Floor({ plan }: { plan: FloorPlan }) {
   );
 }
 
-function Walls({ plan, color }: { plan: FloorPlan; color: string }) {
+/** Porcelain tiles under the kitchen corner, flush with the boards. */
+function TiledFloor({ w, d, ...props }: { w: number; d: number } & GroupProps) {
+  const tex = useMemo(() => {
+    const t = tileTexture().clone();
+    t.repeat.set(w / 2.4, d / 2.4); // 0.6 m tiles
+    t.needsUpdate = true;
+    return t;
+  }, [w, d]);
+  return (
+    <group {...props}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.003, 0]} receiveShadow>
+        <planeGeometry args={[w, d]} />
+        <meshStandardMaterial map={tex} roughness={0.32} />
+      </mesh>
+      {/* aluminium transition strip where the tiles meet the boards */}
+      {[-1, 1].map((s) => (
+        <mesh key={s} position={[s * (w / 2), 0.004, 0]}>
+          <boxGeometry args={[0.03, 0.006, d]} />
+          <meshStandardMaterial color={palette.aluminum} metalness={0.6} roughness={0.4} />
+        </mesh>
+      ))}
+      <mesh position={[0, 0.004, d / 2]}>
+        <boxGeometry args={[w, 0.006, 0.03]} />
+        <meshStandardMaterial color={palette.aluminum} metalness={0.6} roughness={0.4} />
+      </mesh>
+    </group>
+  );
+}
+
+interface Opening {
+  z0: number;
+  z1: number;
+  y0: number;
+  y1: number;
+  kind: "window" | "door";
+}
+
+/**
+ * The west wall's openings along its length `d`: a run of tall windows, then a
+ * solid stretch at the front with the entrance door.
+ */
+function westOpenings(d: number): Opening[] {
+  const band = d - 0.6 - DOOR_SECTION;
+  const n = Math.max(1, Math.floor(band / 2.2));
+  const span = band / n;
+  const windows: Opening[] = Array.from({ length: n }, (_, i) => {
+    const c = 0.6 + span * (i + 0.5);
+    const half = (span - 0.32) / 2;
+    return { z0: c - half, z1: c + half, y0: SILL, y1: HEAD, kind: "window" };
+  });
+  const dz = d - DOOR_SECTION / 2;
+  return [...windows, { z0: dz - DOOR_W / 2, z1: dz + DOOR_W / 2, y0: 0, y1: DOOR_H, kind: "door" }];
+}
+
+/** Solid wall pieces left once the openings are cut: piers, lintels and sill walls. */
+function wallPieces(openings: Opening[], d: number) {
+  const pieces: { z0: number; z1: number; y0: number; y1: number }[] = [];
+  let z = 0;
+  for (const o of [...openings].sort((a, b) => a.z0 - b.z0)) {
+    if (o.z0 > z + 1e-6) pieces.push({ z0: z, z1: o.z0, y0: 0, y1: WALL_H });
+    if (o.y1 < WALL_H) pieces.push({ z0: o.z0, z1: o.z1, y0: o.y1, y1: WALL_H });
+    if (o.y0 > 0) pieces.push({ z0: o.z0, z1: o.z1, y0: 0, y1: o.y0 });
+    z = o.z1;
+  }
+  if (z < d - 1e-6) pieces.push({ z0: z, z1: d, y0: 0, y1: WALL_H });
+  return pieces;
+}
+
+/** A window set into the wall: frame through the reveal, glazing, sill, and sometimes a roller blind part way down. */
+function Window({ z, width, blind }: { z: number; width: number; blind: number }) {
+  const h = HEAD - SILL;
+  return (
+    <group position={[0, (HEAD + SILL) / 2, z]}>
+      {[-1, 1].map((s) => (
+        <mesh key={`j${s}`} position={[-WALL_T / 2, 0, s * (width / 2 - 0.03)]} castShadow>
+          <boxGeometry args={[WALL_T + 0.012, h, 0.06]} />
+          <meshStandardMaterial color={FRAME} roughness={0.4} metalness={0.4} />
+        </mesh>
+      ))}
+      {[-1, 1].map((s) => (
+        <mesh key={`h${s}`} position={[-WALL_T / 2, s * (h / 2 - 0.03), 0]} castShadow>
+          <boxGeometry args={[WALL_T + 0.012, 0.06, width]} />
+          <meshStandardMaterial color={FRAME} roughness={0.4} metalness={0.4} />
+        </mesh>
+      ))}
+      {/* mullion and transom */}
+      <mesh position={[-WALL_T / 2, 0, 0]} castShadow>
+        <boxGeometry args={[0.05, h, 0.04]} />
+        <meshStandardMaterial color={FRAME} roughness={0.4} metalness={0.4} />
+      </mesh>
+      <mesh position={[-WALL_T / 2, h / 2 - 0.7, 0]} castShadow>
+        <boxGeometry args={[0.05, 0.04, width]} />
+        <meshStandardMaterial color={FRAME} roughness={0.4} metalness={0.4} />
+      </mesh>
+      <mesh position={[-WALL_T / 2, 0, 0]} rotation={[0, Math.PI / 2, 0]}>
+        <planeGeometry args={[width - 0.06, h - 0.06]} />
+        <meshPhysicalMaterial color="#d6e6ee" transparent opacity={0.2} roughness={0.04} metalness={0} envMapIntensity={1.5} depthWrite={false} side={THREE.DoubleSide} />
+      </mesh>
+      {/* sill */}
+      <mesh position={[0.045, -h / 2 - 0.02, 0]} castShadow receiveShadow>
+        <boxGeometry args={[0.1, 0.04, width + 0.14]} />
+        <meshStandardMaterial color="#f6f3ec" roughness={0.5} />
+      </mesh>
+      {blind > 0 && (
+        <group position={[0.035, h / 2 + 0.03, 0]}>
+          <mesh rotation={[Math.PI / 2, 0, 0]} castShadow>
+            <cylinderGeometry args={[0.035, 0.035, width + 0.02, 14]} />
+            <meshStandardMaterial color="#f1ede4" roughness={0.6} />
+          </mesh>
+          <mesh position={[0.002, -blind / 2, 0]} rotation={[0, Math.PI / 2, 0]} castShadow>
+            <planeGeometry args={[width - 0.04, blind]} />
+            <meshStandardMaterial color="#ece7dc" roughness={1} side={THREE.DoubleSide} />
+          </mesh>
+          <mesh position={[0.002, -blind, 0]} rotation={[Math.PI / 2, 0, 0]}>
+            <cylinderGeometry args={[0.012, 0.012, width - 0.04, 8]} />
+            <meshStandardMaterial color="#cfc8bb" roughness={0.6} />
+          </mesh>
+        </group>
+      )}
+    </group>
+  );
+}
+
+/** Glazed entrance door in a slim frame, hinged at the front, pull handle on the room side. */
+function Door({ z }: { z: number }) {
+  return (
+    <group position={[0, 0, z]}>
+      {[-1, 1].map((s) => (
+        <mesh key={s} position={[-WALL_T / 2, DOOR_H / 2, s * (DOOR_W / 2 - 0.03)]} castShadow>
+          <boxGeometry args={[WALL_T + 0.02, DOOR_H, 0.06]} />
+          <meshStandardMaterial color={FRAME} roughness={0.4} metalness={0.4} />
+        </mesh>
+      ))}
+      <mesh position={[-WALL_T / 2, DOOR_H - 0.03, 0]} castShadow>
+        <boxGeometry args={[WALL_T + 0.02, 0.06, DOOR_W]} />
+        <meshStandardMaterial color={FRAME} roughness={0.4} metalness={0.4} />
+      </mesh>
+      <group position={[-0.03, 0, 0]}>
+        <mesh position={[0, DOOR_H / 2 - 0.03, 0]} rotation={[0, Math.PI / 2, 0]}>
+          <planeGeometry args={[DOOR_W - 0.14, DOOR_H - 0.12]} />
+          <meshPhysicalMaterial color="#d6e6ee" transparent opacity={0.2} roughness={0.04} metalness={0} envMapIntensity={1.5} depthWrite={false} side={THREE.DoubleSide} />
+        </mesh>
+        {[-1, 1].map((s) => (
+          <mesh key={s} position={[0, DOOR_H / 2 - 0.03, s * (DOOR_W / 2 - 0.085)]} castShadow>
+            <boxGeometry args={[0.03, DOOR_H - 0.06, 0.05]} />
+            <meshStandardMaterial color={FRAME} roughness={0.4} metalness={0.4} />
+          </mesh>
+        ))}
+        {[DOOR_H - 0.085, 0.95].map((y) => (
+          <mesh key={y} position={[0, y, 0]}>
+            <boxGeometry args={[0.03, 0.05, DOOR_W - 0.12]} />
+            <meshStandardMaterial color={FRAME} roughness={0.4} metalness={0.4} />
+          </mesh>
+        ))}
+        <mesh position={[0, 0.14, 0]}>
+          <boxGeometry args={[0.032, 0.28, DOOR_W - 0.12]} />
+          <meshStandardMaterial color="#1d1f24" roughness={0.45} metalness={0.3} />
+        </mesh>
+        <mesh position={[0.05, 1.05, -DOOR_W / 2 + 0.2]}>
+          <cylinderGeometry args={[0.012, 0.012, 0.65, 10]} />
+          <meshStandardMaterial color={palette.aluminum} metalness={0.7} roughness={0.3} />
+        </mesh>
+        {[0.78, 1.32].map((y) => (
+          <mesh key={y} position={[0.025, y, -DOOR_W / 2 + 0.2]} rotation={[0, 0, Math.PI / 2]}>
+            <cylinderGeometry args={[0.008, 0.008, 0.05, 8]} />
+            <meshStandardMaterial color={palette.aluminum} metalness={0.7} roughness={0.3} />
+          </mesh>
+        ))}
+      </group>
+    </group>
+  );
+}
+
+function Walls({ plan, color, sky }: { plan: FloorPlan; color: string; sky: SkyLook }) {
   const w = plan.maxX - plan.minX + 1;
   const d = plan.maxZ - plan.minZ + 1;
-  const sky = useMemo(() => skylineTexture(), []);
-  const winCount = Math.max(2, Math.floor((d - 1.2) / 2.2));
-  const winSpan = (d - 1.2) / winCount;
+  const openings = useMemo(() => westOpenings(d), [d]);
+  const pieces = useMemo(() => wallPieces(openings, d), [openings, d]);
+  const windows = openings.filter((o) => o.kind === "window");
+  const door = openings.find((o) => o.kind === "door")!;
+  const band = { z0: windows[0].z0 - 0.15, z1: windows[windows.length - 1].z1 + 0.15, y0: SILL - 0.15, y1: HEAD + 0.15 };
+  // one continuous view of the city behind every window, redrawn as the light changes
+  const backdrop = skylineTexture(sky, (band.z1 - band.z0) / (band.y1 - band.y0));
   return (
     <group>
       {/* back wall */}
@@ -63,37 +267,39 @@ function Walls({ plan, color }: { plan: FloorPlan; color: string }) {
         <boxGeometry args={[w, 0.12, 0.02]} />
         <meshStandardMaterial color={palette.wallTrim} roughness={0.8} />
       </mesh>
-      {/* left wall: floor-to-ceiling glazing with the skyline behind */}
-      <group position={[plan.minX - WALL_T / 2, 0, plan.minZ]}>
-        <mesh position={[0, WALL_H / 2, d / 2]} castShadow receiveShadow>
-          <boxGeometry args={[WALL_T, WALL_H, d]} />
-          <meshStandardMaterial color={color} roughness={0.92} />
+      {/* west wall: solid pieces around the windows and the door */}
+      <group position={[plan.minX, 0, plan.minZ]}>
+        {pieces.map((p, i) => (
+          <mesh key={i} position={[-WALL_T / 2, (p.y0 + p.y1) / 2, (p.z0 + p.z1) / 2]} castShadow receiveShadow>
+            <boxGeometry args={[WALL_T, p.y1 - p.y0, p.z1 - p.z0]} />
+            <meshStandardMaterial color={color} roughness={0.92} />
+          </mesh>
+        ))}
+        {/* skirting either side of the door */}
+        {[
+          [0, door.z0],
+          [door.z1, d],
+        ].map(([a, b]) => (
+          <mesh key={a} position={[0.01, 0.06, (a + b) / 2]}>
+            <boxGeometry args={[0.02, 0.12, b - a]} />
+            <meshStandardMaterial color={palette.wallTrim} roughness={0.8} />
+          </mesh>
+        ))}
+        <mesh position={[-WALL_T - 0.006, (band.y0 + band.y1) / 2, (band.z0 + band.z1) / 2]} rotation={[0, Math.PI / 2, 0]} userData={{ live: true }}>
+          <planeGeometry args={[band.z1 - band.z0, band.y1 - band.y0]} />
+          <meshBasicMaterial map={backdrop} toneMapped={false} />
         </mesh>
-        {Array.from({ length: winCount }).map((_, i) => {
-          const z = 0.6 + winSpan * (i + 0.5);
-          const ww = winSpan - 0.24;
-          return (
-            <group key={i} position={[WALL_T / 2 + 0.002, 1.6, z]} rotation={[0, Math.PI / 2, 0]}>
-              <mesh>
-                <planeGeometry args={[ww, 2.3]} />
-                <meshBasicMaterial map={sky} toneMapped={false} />
-              </mesh>
-              {/* mullions */}
-              {[-ww / 2, 0, ww / 2].map((x, k) => (
-                <mesh key={k} position={[x, 0, 0.02]}>
-                  <boxGeometry args={[0.05, 2.36, 0.04]} />
-                  <meshStandardMaterial color={palette.ink} roughness={0.4} metalness={0.4} />
-                </mesh>
-              ))}
-              {[-1.15, 1.15].map((y, k) => (
-                <mesh key={k} position={[0, y, 0.02]}>
-                  <boxGeometry args={[ww + 0.05, 0.05, 0.04]} />
-                  <meshStandardMaterial color={palette.ink} roughness={0.4} metalness={0.4} />
-                </mesh>
-              ))}
-            </group>
-          );
+        {windows.map((o, i) => {
+          const r = hash(`blind${i}`);
+          // two windows in three have the blind part-way down; the rest are rolled up
+          const blind = r % 3 === 0 ? 0 : 0.45 + ((r >>> 4) % 5) * 0.2;
+          return <Window key={i} z={(o.z0 + o.z1) / 2} width={o.z1 - o.z0} blind={blind} />;
         })}
+        <Door z={(door.z0 + door.z1) / 2} />
+        <ExitSign position={[0, DOOR_H + 0.3, (door.z0 + door.z1) / 2]} />
+        <WallSwitches position={[0, 1.25, door.z0 - 0.32]} />
+        <FireExtinguisher position={[0, 0.95, door.z1 + 0.36]} />
+        <DoorMat position={[0.5, 0, (door.z0 + door.z1) / 2]} />
       </group>
     </group>
   );
@@ -534,14 +740,31 @@ function Rug({ w, d, ...props }: { w: number; d: number } & GroupProps) {
 
 // ── Room assembly ────────────────────────────────────────────
 
+/** Kit along the west wall, placed back to front until the entrance is reached. */
+const WEST_STRIP: { depth: number; node: (z: number, key: number) => ReactNode }[] = [
+  { depth: 0.75, node: (z, k) => <ServerRack key={k} position={[0, 0, z]} rotation={[0, Math.PI / 2, 0]} /> },
+  { depth: 1.2, node: (z, k) => <Bookshelf key={k} position={[0, 0, z]} rotation={[0, Math.PI / 2, 0]} /> },
+  { depth: 0.9, node: (z, k) => <PrinterStation key={k} position={[0.05, 0, z]} rotation={[0, Math.PI / 2, 0]} /> },
+  { depth: 0.45, node: (z, k) => <WaterCooler key={k} position={[0, 0, z]} rotation={[0, Math.PI / 2, 0]} /> },
+  { depth: 1.05, node: (z, k) => <RecyclingBins key={k} position={[0, 0, z]} rotation={[0, Math.PI / 2, 0]} /> },
+  { depth: 0.7, node: (z, k) => <FloorPlant key={k} position={[0.05, 0, z]} size={0.95} /> },
+  { depth: 1.0, node: (z, k) => <BeanBag key={k} position={[0.45, 0, z]} rotation={[0, 1.2, 0]} color="#8a93a6" /> },
+  { depth: 0.7, node: (z, k) => <FloorPlant key={k} position={[0.05, 0, z]} size={1.1} pot={palette.potDark} /> },
+];
+
 /**
- * The office shell plus culture pieces along the back and left walls.
+ * The office shell plus culture pieces along the back and west walls.
  * Back-wall pieces are laid out left to right and dropped when the room is too narrow.
  */
 export function Room({ plan, theme }: { plan: FloorPlan; theme: RoomTheme }) {
+  const daylight = useContext(DaylightContext);
+  const { lampsOn, interior } = daylight;
   const bz = plan.minZ; // back wall interior face
-  const lx = plan.minX; // left wall interior face
+  const lx = plan.minX; // west wall interior face
   const right = plan.maxX + 1;
+  const d = plan.maxZ + 1 - bz;
+  // pendants and lamps glow once the sun goes; the cheap `on` look is baked, the light itself follows the hour
+  const glow = 0.15 + 2.2 * interior;
 
   const zones = plan.amenities.zones.map(({ kind, x }) => {
     switch (kind) {
@@ -556,14 +779,23 @@ export function Room({ plan, theme }: { plan: FloorPlan; theme: RoomTheme }) {
             {LOUNGE.beanBags.map((p, i) => (
               <BeanBag key={i} position={[p.x, 0, p.z]} rotation={[0, p.facing, 0]} color={i ? "#d9a066" : "#8a93a6"} />
             ))}
+            <ArcLamp on={lampsOn} position={[1.42, 0, 0.5]} />
+            <pointLight position={[0.82, 1.65, 1.25]} color="#ffe3bd" intensity={glow * 0.8} distance={4.5} decay={2} />
           </group>
         );
       case "coffee":
         return (
           <group key={kind} position={[x, 0, bz]}>
+            <TiledFloor w={2.7} d={2.95} position={[0, 0, 1.475]} />
             <CoffeeBar position={[0, 0, 0.36]} accent={theme.accent} />
+            <Kettle position={[0.95, 0.94, 0.3]} />
             <HighTable position={[COFFEE_TABLE.x, 0, COFFEE_TABLE.z]} />
             <Mug position={[COFFEE_TABLE.x + 0.1, 0.857, COFFEE_TABLE.z + 0.08]} color={theme.accent} />
+            <FruitBowl position={[COFFEE_TABLE.x - 0.11, 0.857, COFFEE_TABLE.z - 0.09]} />
+            <WallClock position={[0.8, 2.62, 0.035]} />
+            <Pendant on={lampsOn} position={[-0.6, WALL_H, 0.42]} drop={0.75} />
+            <Pendant on={lampsOn} position={[0.3, WALL_H, 0.42]} drop={0.75} />
+            <pointLight position={[-0.15, 2.1, 0.5]} color="#ffd9a6" intensity={glow} distance={5.5} decay={2} />
           </group>
         );
       case "play":
@@ -578,6 +810,7 @@ export function Room({ plan, theme }: { plan: FloorPlan; theme: RoomTheme }) {
       case "neon":
         return (
           <group key={kind} position={[x, 0, bz]}>
+            <ACUnit position={[0, 2.72, 0.13]} />
             <NeonSign position={[0, 1.95, 0.03]} color={theme.neon} />
             <Poster kind="ship" position={[-0.35, 0.95, 0.03]} rotation={[0, 0, 0.02]} />
             <Poster kind="grid" position={[0.38, 0.95, 0.03]} rotation={[0, 0, -0.02]} />
@@ -593,24 +826,28 @@ export function Room({ plan, theme }: { plan: FloorPlan; theme: RoomTheme }) {
     }
   });
 
-  const sideLen = plan.maxZ + 1 - bz;
-  const layout = `${theme.kind},${lx},${right},${bz},${plan.maxZ},${plan.amenities.zones.map((z) => z.kind).join()}`;
+  // west-wall kit, back to front, stopping short of the entrance
+  const strip: ReactNode[] = [];
+  let z = 1.2;
+  const limit = d - DOOR_SECTION - 0.45;
+  WEST_STRIP.forEach((item, i) => {
+    if (z + item.depth > limit) return;
+    strip.push(item.node(z + item.depth / 2, i));
+    z += item.depth + 0.3;
+  });
+
+  const layout = `${theme.kind},${lx},${right},${bz},${plan.maxZ},${plan.amenities.zones.map((z) => z.kind).join()},${lampsOn}`;
 
   return (
     <StaticBatch version={layout}>
       <Floor plan={plan} />
-      <Walls plan={plan} color={theme.wall} />
+      <Walls plan={plan} color={theme.wall} sky={daylight.sky} />
       {zones}
-      {/* corner + left-wall pieces */}
+      {/* corner + west-wall pieces */}
       <FloorPlant position={[lx + 0.5, 0, bz + 0.5]} size={1.25} />
       <FloorPlant position={[right - 0.45, 0, bz + 0.45]} size={1.05} pot={palette.potDark} />
-      <group position={[lx + 0.35, 0, 0]}>
-        <ServerRack position={[0, 0, bz + 1.6]} rotation={[0, Math.PI / 2, 0]} />
-        <Bookshelf position={[0.0, 0, bz + 3.0]} rotation={[0, Math.PI / 2, 0]} />
-        {sideLen > 8 && <FloorPlant position={[0.25, 0, bz + 4.4]} size={0.95} />}
-        {sideLen > 10 && <BeanBag position={[0.75, 0, bz + 5.6]} rotation={[0, 1.2, 0]} color="#8a93a6" />}
-        {sideLen > 13 && <FloorPlant position={[0.25, 0, plan.maxZ + 0.3]} size={1.1} pot={palette.potDark} />}
-      </group>
+      <group position={[lx + 0.35, 0, bz]}>{strip}</group>
+      <CoatStand position={[lx + 1.5, 0, bz + d - 0.42]} rotation={[0, 0.4, 0]} accent={theme.accent} />
     </StaticBatch>
   );
 }

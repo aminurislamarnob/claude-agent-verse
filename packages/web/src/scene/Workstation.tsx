@@ -8,8 +8,9 @@ import { Character, STAND_HEIGHT, type Activity, type Stance } from "./Character
 import { BreakPresence } from "./breaks";
 import { StaticBatch } from "./StaticBatch";
 import type { BreakSpot, Point } from "./layout";
-import { DeskLamp, DeskPlant, Display, Headphones, Laptop, MechanicalKeyboard, Mouse, Mug, Notebooks, OfficeChair } from "./Props";
-import { hash, lookFor, palette, stateColor, stateLabel } from "./theme";
+import { Backpack, Bottle, Cable, DeskLamp, DeskPlant, Display, DrawerPedestal, Headphones, Laptop, MechanicalKeyboard, Mouse, Mug, Notebooks, OfficeChair, Phone, PowerStrip } from "./Props";
+import { hash, lookFor, palette, pick, stateColor, stateLabel } from "./theme";
+import { DaylightContext } from "./daylight";
 import type { ScreenKind } from "./textures";
 
 export type Focus = { pid: number; subagentId?: string } | null;
@@ -24,6 +25,11 @@ const RUN = 3.4; // units/s, hurrying back to work
 const tagHeight = (state: AgentState) => (state === "waiting_on_user" ? 1.28 : state === "thinking" ? 1.3 : state === "error" ? 1.2 : 1.1);
 
 const ACTIVE: AgentState[] = ["working", "thinking", "waiting_on_user", "error"];
+
+/** Display and laptop leads run over the far edge and drop behind the modesty panel to a strip on the floor. */
+const DISPLAY_LEAD: [number, number, number][] = [[-0.5, DESK_TOP + 0.01, 0.72], [-0.5, DESK_TOP + 0.01, 0.9], [-0.48, DESK_TOP - 0.3, 0.84], [-0.42, 0.06, 0.84], [-0.18, 0.03, 0.96]];
+const LAPTOP_LEAD: [number, number, number][] = [[0.38, DESK_TOP + 0.01, 0.7], [0.4, DESK_TOP + 0.01, 0.9], [0.42, DESK_TOP - 0.3, 0.84], [0.38, 0.06, 0.84], [0.16, 0.03, 0.96]];
+const BAG_COLORS = ["#2f3440", "#5b6cff", "#c9a27e", "#14a38b", "#262a33", "#8a93a6"] as const;
 
 /** Screen content follows what the agent is doing; the seed keeps neighbours varied. */
 function screenFor(state: AgentState | null, tool: string | undefined, seed: number): ScreenKind {
@@ -336,11 +342,24 @@ export function Workstation({
   const extraInterns = session ? Math.max(0, Object.keys(session.subagents ?? {}).length - 3) : 0;
   const lit = state !== null;
   const [seated, setSeated] = useState(true);
+  const { lampsOn } = useContext(DaylightContext);
+  // the clutter of a desk someone actually sits at, stable per desk
+  const pedestal = (seed >>> 3) % 2 === 0;
+  const bag = !!session && (seed >>> 9) % 3 === 0;
+  const bottle = (seed >>> 11) % 2 === 0;
+  const phone = (seed >>> 15) % 3 === 0;
 
   return (
     <group>
-      <StaticBatch version={`${deskKey}|${kind}|${state}|${seated && !!session}`}>
+      <StaticBatch version={`${deskKey}|${kind}|${state}|${seated && !!session}|${lampsOn}`}>
         <Desk accent={accent} occupied={lit} />
+        {pedestal && <DrawerPedestal position={[0.42, 0, 0.6]} />}
+        {bag && <Backpack position={[0.92, 0, 0.5]} rotation={[0, 1.1, 0]} color={pick(BAG_COLORS, seed, 21)} />}
+        {bottle && <Bottle position={[0.05, DESK_TOP, 0.8]} />}
+        {phone && <Phone position={[-0.4, DESK_TOP, 0.42]} rotation={[0, 0.35, 0]} />}
+        <Cable points={DISPLAY_LEAD} />
+        <Cable points={LAPTOP_LEAD} />
+        <PowerStrip position={[0, 0, 0.98]} on={lit} />
 
         {/* main display, angled so the camera can read it */}
         <Display
@@ -362,7 +381,7 @@ export function Workstation({
         <Mouse position={[0.27, DESK_TOP, 0.38]} />
         <Mug position={[0.62, DESK_TOP, 0.32]} color={decor % 2 ? "#f4f2ee" : accent} steam={state === "working" || state === "thinking"} />
         {decor === 0 && <DeskPlant position={[-0.62, DESK_TOP, 0.88]} />}
-        {decor === 1 && <DeskLamp position={[-0.64, DESK_TOP, 0.86]} rotation={[0, -0.6, 0]} on={lit} />}
+        {decor === 1 && <DeskLamp position={[-0.64, DESK_TOP, 0.86]} rotation={[0, -0.6, 0]} on={lit && lampsOn} />}
         {decor === 2 && <Notebooks position={[0.58, DESK_TOP, 0.82]} />}
         {decor === 3 && !look.headphones && <Headphones position={[0.6, DESK_TOP, 0.84]} rotation={[0, 0.4, 0]} />}
         {decor === 3 && look.headphones && <DeskPlant position={[0.62, DESK_TOP, 0.86]} pot={palette.potDark} />}

@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import type { SkyLook } from "./daylight";
 import { hash } from "./theme";
 
 // ── Procedural screen & decor textures ───────────────────────
@@ -9,7 +10,7 @@ export type ScreenKind = "code" | "terminal" | "design" | "dashboard" | "browser
 
 const cache = new Map<string, THREE.CanvasTexture>();
 
-function make(key: string, w: number, h: number, draw: (ctx: CanvasRenderingContext2D, w: number, h: number) => void) {
+function make(key: string, w: number, h: number, draw: (ctx: CanvasRenderingContext2D, w: number, h: number) => void, data = false) {
   const hit = cache.get(key);
   if (hit) return hit;
   const canvas = document.createElement("canvas");
@@ -18,10 +19,18 @@ function make(key: string, w: number, h: number, draw: (ctx: CanvasRenderingCont
   const ctx = canvas.getContext("2d")!;
   draw(ctx, w, h);
   const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
+  // bump and roughness maps hold data, not colour
+  tex.colorSpace = data ? THREE.NoColorSpace : THREE.SRGBColorSpace;
   tex.anisotropy = 8;
   cache.set(key, tex);
   return tex;
+}
+
+/** Redraws a cached canvas texture in place. */
+function redraw(tex: THREE.CanvasTexture, draw: (ctx: CanvasRenderingContext2D, w: number, h: number) => void) {
+  const canvas = tex.image as HTMLCanvasElement;
+  draw(canvas.getContext("2d")!, canvas.width, canvas.height);
+  tex.needsUpdate = true;
 }
 
 function rand(seed: number) {
@@ -330,32 +339,155 @@ export function whiteboardTexture() {
   });
 }
 
-/** Dusk city skyline seen through the office windows. */
-export function skylineTexture() {
-  return make("skyline", 1024, 512, (ctx, w, h) => {
-    const g = ctx.createLinearGradient(0, 0, 0, h);
-    g.addColorStop(0, "#9fb7d9");
-    g.addColorStop(0.55, "#e8c9b5");
-    g.addColorStop(1, "#f3d9c4");
-    ctx.fillStyle = g;
+const skylineLook = new Map<string, string>();
+
+/**
+ * The city outside the windows: one backdrop texture behind the whole window
+ * band, redrawn in place as the daylight changes. `aspect` is the band's
+ * width over its height, so buildings keep their proportions in a long room.
+ */
+export function skylineTexture(sky: SkyLook, aspect: number): THREE.CanvasTexture {
+  const h = 512;
+  const w = Math.min(4096, Math.max(1024, Math.round((h * aspect) / 256) * 256));
+  const key = `skyline:${w}`;
+  const look = JSON.stringify(sky, (_, v) => (typeof v === "number" ? Math.round(v * 50) / 50 : v));
+  const hit = cache.get(key);
+  if (!hit) {
+    skylineLook.set(key, look);
+    return make(key, w, h, (ctx) => drawSkyline(ctx, w, h, sky));
+  }
+  if (skylineLook.get(key) !== look) {
+    skylineLook.set(key, look);
+    redraw(hit, (ctx) => drawSkyline(ctx, w, h, sky));
+  }
+  return hit;
+}
+
+function drawSkyline(ctx: CanvasRenderingContext2D, w: number, h: number, sky: SkyLook) {
+  const horizon = h * 0.66;
+  const g = ctx.createLinearGradient(0, 0, 0, h);
+  g.addColorStop(0, sky.top);
+  g.addColorStop(0.45, mixHex(sky.top, sky.horizon, 0.55));
+  g.addColorStop(0.66, sky.horizon);
+  g.addColorStop(0.8, sky.glow);
+  g.addColorStop(1, sky.glow);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, w, h);
+
+  const r = rand(42);
+  // stars fade in with the night
+  if (sky.stars > 0.01) {
+    for (let i = 0; i < 160; i++) {
+      const x = r() * w;
+      const y = r() * h * 0.55;
+      const a = sky.stars * (0.35 + 0.65 * r());
+      ctx.fillStyle = `rgba(255,255,255,${a.toFixed(3)})`;
+      const s = r() < 0.15 ? 2.2 : 1.3;
+      ctx.fillRect(x, y, s, s);
+    }
+  } else for (let i = 0; i < 160 * 3; i++) r(); // keep the sequence aligned
+  // a low sun in the west is seen through the windows; higher up it is just light
+  if (sky.sun > 0 && sky.sun < 0.5) {
+    const sx = w * 0.64;
+    const sy = horizon - sky.sun * h * 0.9;
+    const glow = ctx.createRadialGradient(sx, sy, 10, sx, sy, h * 0.5);
+    glow.addColorStop(0, hexAlpha(sky.sunColor, 0.85));
+    glow.addColorStop(0.25, hexAlpha(sky.sunColor, 0.25));
+    glow.addColorStop(1, hexAlpha(sky.sunColor, 0));
+    ctx.fillStyle = glow;
     ctx.fillRect(0, 0, w, h);
-    const r = rand(42);
-    for (const [layer, color, base] of [[0, "#b7b9c9", 0.55], [1, "#8e92a8", 0.68]] as const) {
-      let x = 0;
-      while (x < w) {
-        const bw = 40 + r() * 90;
-        const bh = h * (0.18 + r() * (layer ? 0.32 : 0.42));
-        ctx.fillStyle = color;
-        ctx.fillRect(x, h * base - bh + h * 0.32, bw, bh + h);
-        if (layer) {
-          ctx.fillStyle = "rgba(255, 228, 170, 0.75)";
-          for (let wy = h * base - bh + h * 0.32 + 10; wy < h; wy += 16)
-            for (let wx = x + 8; wx < x + bw - 10; wx += 14) if (r() < 0.3) ctx.fillRect(wx, wy, 6, 8);
-        }
-        x += bw + 4;
+    ctx.fillStyle = sky.sunColor;
+    ctx.beginPath();
+    ctx.arc(sx, sy, h * 0.055, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  if (sky.moon) {
+    const mx = w * 0.28;
+    const my = h * 0.2;
+    const glow = ctx.createRadialGradient(mx, my, 4, mx, my, h * 0.18);
+    glow.addColorStop(0, "rgba(220,228,255,0.35)");
+    glow.addColorStop(1, "rgba(220,228,255,0)");
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = "#e9edf8";
+    ctx.beginPath();
+    ctx.arc(mx, my, h * 0.03, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = sky.top;
+    ctx.beginPath();
+    ctx.arc(mx + h * 0.014, my - h * 0.008, h * 0.026, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // unlit windows reflect the sky by day and go dark at night
+  const dark = Math.min(1, Math.max(0, (sky.lit - 0.1) / 0.6));
+  const litColor = "#ffdca3";
+  const layers: [string, number, number, number, number][] = [
+    // colour, min top, max top, min width, max width (tops as a share of h)
+    [sky.far, 0.4, 0.62, 46, 110],
+    [sky.near, 0.3, 0.7, 80, 190],
+  ];
+  layers.forEach(([color, topMin, topMax, wMin, wMax], layer) => {
+    let x = -20;
+    while (x < w) {
+      const bw = wMin + r() * (wMax - wMin);
+      const top = h * (topMin + r() * (topMax - topMin));
+      ctx.fillStyle = color;
+      ctx.fillRect(x, top, bw, h - top);
+      // roof furniture on the near layer
+      if (layer === 1 && r() < 0.5) {
+        ctx.fillRect(x + bw * 0.2, top - 9, bw * 0.25, 9);
+        if (r() < 0.4) ctx.fillRect(x + bw * 0.7, top - 22, 2, 22);
       }
+      const cols = Math.max(1, Math.floor((bw - 12) / 15));
+      const pitch = (bw - 12) / cols;
+      const cell = Math.min(8, pitch - 5);
+      for (let wy = top + 12; wy < h * 0.9; wy += 17)
+        for (let c = 0; c < cols; c++) {
+          const wx = x + 8 + c * pitch;
+          const on = r() < sky.lit * (layer ? 1 : 0.8);
+          if (on) {
+            ctx.fillStyle = hexAlpha(litColor, 0.55 + 0.4 * dark);
+          } else {
+            ctx.fillStyle = `rgba(${Math.round(225 - 200 * dark)},${Math.round(236 - 215 * dark)},${Math.round(252 - 225 * dark)},${(0.42 - 0.2 * dark).toFixed(2)})`;
+          }
+          ctx.fillRect(wx, wy, cell, 9);
+        }
+      x += bw + 3 + r() * 6;
     }
   });
+  // street: a dark road with trees along it and lamps once it gets dark
+  const street = h * 0.9;
+  ctx.fillStyle = mixHex(sky.near, "#000000", 0.35);
+  ctx.fillRect(0, street, w, h - street);
+  const leaf = mixHex("#3f6e48", sky.near, 0.45 * dark);
+  for (let x = 30; x < w; x += 70 + r() * 90) {
+    const rad = 16 + r() * 14;
+    ctx.fillStyle = mixHex(sky.near, "#000", 0.5);
+    ctx.fillRect(x - 2, street - 6, 4, 12);
+    ctx.fillStyle = leaf;
+    ctx.beginPath();
+    ctx.arc(x, street - rad * 0.9, rad, 0, Math.PI * 2);
+    ctx.arc(x - rad * 0.6, street - rad * 0.55, rad * 0.7, 0, Math.PI * 2);
+    ctx.arc(x + rad * 0.6, street - rad * 0.5, rad * 0.65, 0, Math.PI * 2);
+    ctx.fill();
+    if (dark > 0.3 && r() < 0.5) {
+      ctx.fillStyle = `rgba(255,214,150,${(dark * 0.9).toFixed(2)})`;
+      ctx.beginPath();
+      ctx.arc(x + 32, street - 24, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
+const _c1 = new THREE.Color();
+const _c2 = new THREE.Color();
+function mixHex(a: string, b: string, t: number) {
+  return "#" + _c1.set(a).lerp(_c2.set(b), t).getHexString();
+}
+function hexAlpha(hex: string, a: number) {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a.toFixed(3)})`;
 }
 
 /** Wall poster / neon artwork. */
@@ -409,38 +541,210 @@ export function posterTexture(kind: "ship" | "grid" | "pixel") {
   });
 }
 
-/** Light oak floor planks. Repeat-wrapped; set `repeat` to the floor size. */
-export function woodTexture() {
-  const tex = make("wood", 512, 512, (ctx, w, h) => {
-    const r = rand(7);
-    const plankH = h / 8;
-    for (let row = 0; row < 8; row++) {
-      let x = -((row * 97) % 180);
-      while (x < w) {
-        const pw = 160 + r() * 140;
-        const shade = 0.94 + r() * 0.09;
-        const base = [217, 199, 172].map((c) => Math.round(c * shade));
-        ctx.fillStyle = `rgb(${base.join(",")})`;
-        ctx.fillRect(x, row * plankH, pw, plankH);
-        ctx.strokeStyle = "rgba(120, 92, 60, 0.08)";
-        ctx.lineWidth = 1;
-        for (let g = 0; g < 5; g++) {
-          const gy = row * plankH + 6 + r() * (plankH - 12);
+interface Plank {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  shade: number;
+  warm: number;
+  knot: [number, number] | null;
+  grain: number[];
+}
+
+let plankLayout: Plank[] | null = null;
+const WOOD_W = 1024;
+const WOOD_H = 1024;
+const PLANK_ROWS = 16;
+
+/** The plank layout is shared by the colour and bump maps so grooves line up with seams. */
+function planks(): Plank[] {
+  if (plankLayout) return plankLayout;
+  const r = rand(7);
+  const list: Plank[] = [];
+  const ph = WOOD_H / PLANK_ROWS;
+  for (let row = 0; row < PLANK_ROWS; row++) {
+    let x = -((row * 173) % 420);
+    while (x < WOOD_W) {
+      const pw = 300 + r() * 320;
+      list.push({
+        x,
+        y: row * ph,
+        w: pw,
+        h: ph,
+        shade: 0.86 + r() * 0.2,
+        warm: r() * 2 - 1,
+        knot: r() < 0.12 ? [x + 40 + r() * (pw - 80), row * ph + ph * (0.3 + r() * 0.4)] : null,
+        grain: Array.from({ length: 7 }, () => r()),
+      });
+      x += pw;
+    }
+  }
+  return (plankLayout = list);
+}
+
+/**
+ * Oak floor: planks with their own tint, wavy grain, the odd knot and dark seams.
+ * Repeat-wrapped; set `repeat` on both maps so three units span one copy.
+ */
+export function woodTexture(): { map: THREE.CanvasTexture; bump: THREE.CanvasTexture } {
+  const map = make("wood", WOOD_W, WOOD_H, (ctx, w, h) => {
+    ctx.fillStyle = "rgb(205,185,155)";
+    ctx.fillRect(0, 0, w, h);
+    for (const p of planks()) {
+      const base = [219 + p.warm * 9, 199 + p.warm * 3, 170 - p.warm * 8].map((c) => Math.round(Math.min(255, c * p.shade)));
+      ctx.fillStyle = `rgb(${base.join(",")})`;
+      ctx.fillRect(p.x, p.y, p.w, p.h);
+      // grain: long wavy strokes, a few darker streaks
+      ctx.lineWidth = 1;
+      p.grain.forEach((g, i) => {
+        const gy = p.y + 4 + g * (p.h - 8);
+        ctx.strokeStyle = i % 3 === 0 ? "rgba(110, 80, 50, 0.18)" : "rgba(120, 92, 60, 0.09)";
+        ctx.beginPath();
+        ctx.moveTo(p.x, gy);
+        ctx.bezierCurveTo(p.x + p.w * 0.3, gy + (g - 0.5) * 6, p.x + p.w * 0.7, gy - (g - 0.5) * 5, p.x + p.w, gy + (g - 0.5) * 2);
+        ctx.stroke();
+      });
+      if (p.knot) {
+        const [kx, ky] = p.knot;
+        for (let i = 3; i > 0; i--) {
+          ctx.strokeStyle = `rgba(95, 65, 40, ${0.12 * i})`;
           ctx.beginPath();
-          ctx.moveTo(x, gy);
-          ctx.bezierCurveTo(x + pw * 0.3, gy + r() * 4 - 2, x + pw * 0.7, gy + r() * 4 - 2, x + pw, gy);
+          ctx.ellipse(kx, ky, 6 * i, 3.5 * i, 0.3, 0, Math.PI * 2);
           ctx.stroke();
         }
-        ctx.fillStyle = "rgba(90, 70, 50, 0.18)";
-        ctx.fillRect(x + pw - 1, row * plankH, 1.5, plankH);
-        x += pw;
+        ctx.fillStyle = "rgba(95, 65, 40, 0.35)";
+        ctx.beginPath();
+        ctx.ellipse(kx, ky, 4, 2.5, 0.3, 0, Math.PI * 2);
+        ctx.fill();
       }
-      ctx.fillStyle = "rgba(90, 70, 50, 0.16)";
-      ctx.fillRect(0, row * plankH, w, 1.5);
+      // end joint
+      ctx.fillStyle = "rgba(80, 60, 40, 0.28)";
+      ctx.fillRect(p.x + p.w - 1.5, p.y, 2, p.h);
     }
+    // row seams
+    ctx.fillStyle = "rgba(80, 60, 40, 0.26)";
+    for (let row = 0; row <= PLANK_ROWS; row++) ctx.fillRect(0, (row * h) / PLANK_ROWS - 1, w, 2);
+  });
+  const bump = make(
+    "wood-bump",
+    WOOD_W,
+    WOOD_H,
+    (ctx, w, h) => {
+      ctx.fillStyle = "rgb(128,128,128)";
+      ctx.fillRect(0, 0, w, h);
+      for (const p of planks()) {
+        // slight cupping across each plank: a hair higher in the middle
+        const g = ctx.createLinearGradient(0, p.y, 0, p.y + p.h);
+        g.addColorStop(0, "rgb(120,120,120)");
+        g.addColorStop(0.5, "rgb(134,134,134)");
+        g.addColorStop(1, "rgb(120,120,120)");
+        ctx.fillStyle = g;
+        ctx.fillRect(p.x, p.y, p.w, p.h);
+        ctx.lineWidth = 1;
+        p.grain.forEach((gr, i) => {
+          const gy = p.y + 4 + gr * (p.h - 8);
+          ctx.strokeStyle = i % 3 === 0 ? "rgba(90,90,90,0.5)" : "rgba(110,110,110,0.4)";
+          ctx.beginPath();
+          ctx.moveTo(p.x, gy);
+          ctx.bezierCurveTo(p.x + p.w * 0.3, gy + (gr - 0.5) * 6, p.x + p.w * 0.7, gy - (gr - 0.5) * 5, p.x + p.w, gy + (gr - 0.5) * 2);
+          ctx.stroke();
+        });
+        ctx.fillStyle = "rgb(60,60,60)";
+        ctx.fillRect(p.x + p.w - 2, p.y, 3, p.h);
+      }
+      ctx.fillStyle = "rgb(60,60,60)";
+      for (let row = 0; row <= PLANK_ROWS; row++) ctx.fillRect(0, (row * h) / PLANK_ROWS - 1.5, w, 3);
+    },
+    true,
+  );
+  map.wrapS = map.wrapT = bump.wrapS = bump.wrapT = THREE.RepeatWrapping;
+  return { map, bump };
+}
+
+/** Large porcelain floor tiles with grout, for the kitchen corner. Repeat-wrapped; four tiles per copy. */
+export function tileTexture() {
+  const tex = make("tiles", 512, 512, (ctx, w, h) => {
+    const r = rand(99);
+    ctx.fillStyle = "#b3aea6";
+    ctx.fillRect(0, 0, w, h);
+    const n = 4;
+    const t = w / n;
+    for (let y = 0; y < n; y++)
+      for (let x = 0; x < n; x++) {
+        const v = 222 + Math.round((r() - 0.5) * 10);
+        ctx.fillStyle = `rgb(${v},${v - 2},${v - 6})`;
+        ctx.fillRect(x * t + 2, y * t + 2, t - 4, t - 4);
+        // faint stone veining
+        ctx.strokeStyle = "rgba(150,145,138,0.25)";
+        ctx.lineWidth = 1;
+        for (let k = 0; k < 3; k++) {
+          const sx = x * t + r() * t;
+          const sy = y * t + r() * t;
+          ctx.beginPath();
+          ctx.moveTo(sx, sy);
+          ctx.bezierCurveTo(sx + 30, sy + (r() - 0.5) * 30, sx + 50, sy + (r() - 0.5) * 40, sx + 90, sy + (r() - 0.5) * 20);
+          ctx.stroke();
+        }
+      }
   });
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   return tex;
+}
+
+/** Plain analogue clock face: minute ticks, bold hour marks and four numerals. */
+export function clockFaceTexture() {
+  return make("clock-face", 256, 256, (ctx, w, h) => {
+    const c = w / 2;
+    ctx.fillStyle = "#fbfaf7";
+    ctx.beginPath();
+    ctx.arc(c, c, c, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#2b2f38";
+    for (let i = 0; i < 60; i++) {
+      const a = (i / 60) * Math.PI * 2;
+      const hour = i % 5 === 0;
+      ctx.lineWidth = hour ? 4 : 1.5;
+      const r0 = hour ? c - 26 : c - 16;
+      ctx.beginPath();
+      ctx.moveTo(c + Math.sin(a) * r0, c - Math.cos(a) * r0);
+      ctx.lineTo(c + Math.sin(a) * (c - 8), c - Math.cos(a) * (c - 8));
+      ctx.stroke();
+    }
+    ctx.fillStyle = "#2b2f38";
+    ctx.font = "600 34px -apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("12", c, 48);
+    ctx.fillText("3", w - 48, c + 2);
+    ctx.fillText("6", c, h - 46);
+    ctx.fillText("9", 48, c + 2);
+  });
+}
+
+/** Illuminated EXIT sign over the door. */
+export function exitSignTexture() {
+  return make("exit", 256, 96, (ctx, w, h) => {
+    ctx.fillStyle = "#1f9d55";
+    roundRect(ctx, 0, 0, w, h, 8);
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "800 58px -apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, sans-serif";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillText("EXIT", 22, h / 2 + 3);
+    // arrow
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 9;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.beginPath();
+    ctx.moveTo(176, h / 2);
+    ctx.lineTo(232, h / 2);
+    ctx.moveTo(212, h / 2 - 20);
+    ctx.lineTo(232, h / 2);
+    ctx.lineTo(212, h / 2 + 20);
+    ctx.stroke();
+  });
 }
 
 /** Team sign: colour swatch, project name and a live count line. */

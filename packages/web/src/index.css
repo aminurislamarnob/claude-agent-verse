@@ -809,3 +809,151 @@ button {
   overflow: hidden;
   pointer-events: none;
 }
+
+/* ── Navigation HUD ───────────────────────────────────── */
+
+.nav-pad {
+  position: absolute;
+  bottom: 16px;
+  z-index: 2;
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+  border-radius: var(--radius);
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+
+.nav-pad__dpad {
+  display: grid;
+  grid-template-columns: repeat(3, 34px);
+  grid-auto-rows: 34px;
+  gap: 4px;
+}
+
+.nav-pad__column {
+  display: grid;
+  grid-auto-rows: 34px;
+  gap: 4px;
+  width: 34px;
+}
+
+.nav-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid var(--hairline);
+  color: var(--ink-2);
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.nav-btn:hover {
+  background: #fff;
+  color: var(--ink);
+}
+
+.nav-btn:active,
+.nav-btn--on {
+  background: var(--ink);
+  color: #fff;
+  border-color: var(--ink);
+}
+
+.nav-btn--corner {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.nav-btn--home {
+  font-size: 17px;
+}
+
+.nav-btn--mode {
+  font-size: 15px;
+}
+
+.nav-btn--off {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.nav-help {
+  position: absolute;
+  bottom: 140px;
+  z-index: 2;
+  width: 300px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  font-size: 12px;
+}
+
+.nav-help__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.nav-help__close {
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  color: var(--ink-3);
+  font-size: 16px;
+}
+
+.nav-help__close:hover {
+  background: rgba(29, 31, 36, 0.06);
+  color: var(--ink);
+}
+
+.nav-help dl {
+  display: grid;
+  gap: 5px;
+}
+
+.nav-help dl > div {
+  display: grid;
+  grid-template-columns: 118px 1fr;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.nav-help dd {
+  color: var(--ink-2);
+}
+
+.nav-help kbd {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: rgba(29, 31, 36, 0.06);
+  border: 1px solid var(--hairline-strong);
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.minimap {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  z-index: 2;
+  padding: 6px;
+  border-radius: var(--radius);
+  cursor: crosshair;
+}
+
+@media (max-width: 900px) {
+  .minimap,
+  .nav-help {
+    display: none;
+  }
+}
