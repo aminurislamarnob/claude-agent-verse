@@ -16,6 +16,10 @@ pnpm dev                                       # prints the tokenized localhost 
 
 Append `&preview` to the printed URL to see a synthetic office that cycles through every agent state, or `&preview=still` to freeze it. Preview never talks to the server.
 
+## Daylight
+
+The office keeps your local time. Sun comes in through the west windows and swings round the room over the day, the city outside fades to lights at dusk, and the pendants, floor lamp and desk lamps come on in the evening; the wall clock over the coffee bar shows the real time. To review a particular hour, append `&time=HH` or `&time=HH:MM` to the URL to pin the clock, or `&time=cycle` to run a whole day in under a minute.
+
 ## Rooms
 
 Each kind of AI coding agent has its own room, shown one at a time. Tabs in the top bar switch rooms and show each room's agent count and how many of its agents are waiting on you; the browser tab title counts every room.

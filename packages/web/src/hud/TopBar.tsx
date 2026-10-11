@@ -11,9 +11,11 @@ interface TopBarProps {
   onRoomChange: (room: AgentKind) => void;
   connected: boolean;
   preview: boolean;
+  /** The hour the office is showing when `?time=` pins or fast-forwards the clock. */
+  clock?: string;
 }
 
-export function TopBar({ office, room, onRoomChange, connected, preview }: TopBarProps) {
+export function TopBar({ office, room, onRoomChange, connected, preview, clock }: TopBarProps) {
   const all = Object.values(office.sessions);
   const sessions = all.filter((s) => roomOf(s) === room);
   const counts = new Map<AgentState, number>();
@@ -42,6 +44,7 @@ export function TopBar({ office, room, onRoomChange, connected, preview }: TopBa
             {connected ? "Live" : "Reconnecting…"} · {sessions.length} agent{sessions.length === 1 ? "" : "s"} · {projects} project{projects === 1 ? "" : "s"}
             {interns > 0 && ` · ${interns} intern${interns === 1 ? "" : "s"}`}
             {onBreak > 0 && ` · ${onBreak} on break`}
+            {clock && ` · ${clock} on the clock`}
           </div>
         </div>
       </div>

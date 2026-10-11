@@ -402,3 +402,121 @@ export function Notebooks(props: GroupProps) {
     </group>
   );
 }
+
+// ── Lived-in desk details ────────────────────────────────────
+
+/** Three-drawer pedestal tucked under the desk. */
+export function DrawerPedestal(props: GroupProps) {
+  return (
+    <group {...props}>
+      <RoundedBox args={[0.4, 0.6, 0.5]} radius={0.012} position={[0, 0.31, 0]} castShadow receiveShadow>
+        <meshStandardMaterial color="#e8e4dc" roughness={0.6} />
+      </RoundedBox>
+      {[0.12, 0.3, 0.48].map((y) => (
+        <group key={y} position={[0, y, -0.251]}>
+          <mesh>
+            <boxGeometry args={[0.36, 0.15, 0.004]} />
+            <meshStandardMaterial color="#dcd7cd" roughness={0.7} />
+          </mesh>
+          <mesh position={[0, 0.045, -0.006]}>
+            <boxGeometry args={[0.1, 0.012, 0.01]} />
+            <meshStandardMaterial color={palette.aluminumDark} metalness={0.6} roughness={0.4} />
+          </mesh>
+        </group>
+      ))}
+    </group>
+  );
+}
+
+/** Backpack dropped on the floor beside the chair, leaning on the desk leg. */
+export function Backpack({ color = "#2f3440", ...props }: { color?: string } & GroupProps) {
+  return (
+    <group {...props}>
+      <group rotation={[-0.3, 0, 0]} position={[0, 0.19, 0]}>
+        <RoundedBox args={[0.28, 0.38, 0.16]} radius={0.05} castShadow>
+          <meshStandardMaterial color={color} roughness={0.95} />
+        </RoundedBox>
+        <RoundedBox args={[0.2, 0.16, 0.06]} radius={0.03} position={[0, -0.06, 0.1]} castShadow>
+          <meshStandardMaterial color={color} roughness={0.95} />
+        </RoundedBox>
+        {[-1, 1].map((s) => (
+          <mesh key={s} position={[s * 0.08, 0.02, -0.09]} rotation={[0.1, 0, 0]}>
+            <boxGeometry args={[0.04, 0.3, 0.012]} />
+            <meshStandardMaterial color="#1d1f24" roughness={0.9} />
+          </mesh>
+        ))}
+        <mesh position={[0, 0.2, 0]} rotation={[Math.PI / 2, 0, 0]}>
+          <torusGeometry args={[0.04, 0.008, 6, 14, Math.PI]} />
+          <meshStandardMaterial color="#1d1f24" roughness={0.9} />
+        </mesh>
+      </group>
+    </group>
+  );
+}
+
+/** Reusable water bottle. */
+export function Bottle({ color = "#8fcbe8", ...props }: { color?: string } & GroupProps) {
+  return (
+    <group {...props}>
+      <mesh position={[0, 0.1, 0]} castShadow>
+        <cylinderGeometry args={[0.03, 0.032, 0.2, 18]} />
+        <meshPhysicalMaterial color={color} transparent opacity={0.6} roughness={0.15} depthWrite={false} />
+      </mesh>
+      <mesh position={[0, 0.07, 0]}>
+        <cylinderGeometry args={[0.027, 0.029, 0.13, 18]} />
+        <meshStandardMaterial color="#6fb6dc" transparent opacity={0.55} roughness={0.2} depthWrite={false} />
+      </mesh>
+      <mesh position={[0, 0.215, 0]} castShadow>
+        <cylinderGeometry args={[0.018, 0.026, 0.035, 14]} />
+        <meshStandardMaterial color="#2b2d33" roughness={0.5} />
+      </mesh>
+    </group>
+  );
+}
+
+/** Phone face up on the desk. */
+export function Phone(props: GroupProps) {
+  return (
+    <group {...props}>
+      <RoundedBox args={[0.072, 0.008, 0.15]} radius={0.006} position={[0, 0.004, 0]} castShadow>
+        <meshStandardMaterial color="#1d1f24" roughness={0.3} metalness={0.3} />
+      </RoundedBox>
+      <mesh position={[0, 0.0085, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[0.064, 0.14]} />
+        <meshStandardMaterial color="#0b0c10" roughness={0.1} />
+      </mesh>
+    </group>
+  );
+}
+
+/** A cable run as a smooth tube through `points` (local coordinates). */
+export function Cable({ points, radius = 0.009, color = "#2a2c33" }: { points: [number, number, number][]; radius?: number; color?: string }) {
+  const curve = useMemo(() => new THREE.CatmullRomCurve3(points.map((p) => new THREE.Vector3(...p)), false, "catmullrom", 0.3), [points]);
+  return (
+    <mesh>
+      <tubeGeometry args={[curve, 20, radius, 6, false]} />
+      <meshStandardMaterial color={color} roughness={0.7} />
+    </mesh>
+  );
+}
+
+/** Power strip on the floor with a lit switch. */
+export function PowerStrip({ on = true, ...props }: { on?: boolean } & GroupProps) {
+  return (
+    <group {...props}>
+      <RoundedBox args={[0.3, 0.035, 0.07]} radius={0.008} position={[0, 0.0175, 0]} castShadow>
+        <meshStandardMaterial color="#f4f2ee" roughness={0.6} />
+      </RoundedBox>
+      {[-0.08, 0, 0.08].map((x) => (
+        <mesh key={x} position={[x, 0.036, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <circleGeometry args={[0.014, 12]} />
+          <meshStandardMaterial color="#dcd7cd" roughness={0.6} />
+        </mesh>
+      ))}
+      <mesh position={[0.13, 0.036, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[0.014, 0.024]} />
+        <meshBasicMaterial color={on ? "#ff6b4a" : "#4a4d55"} toneMapped={false} />
+      </mesh>
+    </group>
+  );
+}

@@ -13,6 +13,7 @@ import { Workstation, type Focus } from "./Workstation";
 import { palette, teamColor } from "./theme";
 import { signTexture } from "./textures";
 import type { RoomTheme } from "./rooms";
+import { DaylightContext, type Daylight } from "./daylight";
 
 export type { Focus } from "./Workstation";
 
@@ -220,10 +221,11 @@ function CameraRig({ room, plan, breaks, focus, insetRight }: { room: string; pl
 }
 
 /**
- * Shadows only change when agents change pose, so the shadow map re-renders for a
- * moment after each office update instead of on every frame.
+ * Shadows only change when agents change pose or the sun moves, so the shadow map
+ * re-renders for a moment after each office update or change of light instead of
+ * on every frame.
  */
-function ShadowBudget({ version }: { version: unknown }) {
+function ShadowBudget({ version, light }: { version: unknown; light: number }) {
   const gl = useThree((s) => s.gl);
   useEffect(() => {
     gl.shadowMap.autoUpdate = true;
@@ -232,7 +234,7 @@ function ShadowBudget({ version }: { version: unknown }) {
       gl.shadowMap.needsUpdate = true;
     }, 1500);
     return () => clearTimeout(id);
-  }, [gl, version]);
+  }, [gl, version, light]);
   return null;
 }
 
@@ -260,10 +262,16 @@ function FrameDriver({ fps }: { fps: number }) {
   return null;
 }
 
-function Lights({ plan }: { plan: FloorPlan }) {
+/**
+ * Daylight and the ceiling fittings. One shadow-casting key light plays the sun
+ * by day and the overhead fittings after dark; its direction, colour and strength
+ * come from the Daylight record, so shadows swing round the room with the hours.
+ */
+function Lights({ plan, daylight }: { plan: FloorPlan; daylight: Daylight }) {
   const c = roomCenter(plan);
   const span = Math.max(plan.maxX - plan.minX, plan.maxZ - plan.minZ) * 0.75 + 4;
   const light = useRef<THREE.DirectionalLight>(null);
+  const [dx, dy, dz] = daylight.key.dir;
   useEffect(() => {
     const l = light.current;
     if (!l) return;
@@ -276,19 +284,19 @@ function Lights({ plan }: { plan: FloorPlan }) {
   });
   return (
     <>
-      <hemisphereLight args={["#ffffff", "#d6c4a8", 1.15]} />
-      <ambientLight intensity={0.25} />
+      <hemisphereLight color={daylight.hemisphere.sky} groundColor={daylight.hemisphere.ground} intensity={daylight.hemisphere.intensity} />
+      <ambientLight intensity={daylight.ambient} />
       <directionalLight
         ref={light}
-        position={[c.x - 9, 16, c.z + 7]}
-        intensity={2.1}
-        color="#fff6ea"
+        position={[c.x + dx * 22, dy * 22, c.z + dz * 22]}
+        intensity={daylight.key.intensity}
+        color={daylight.key.color}
         castShadow
         shadow-mapSize={[2048, 2048]}
         shadow-bias={-0.0004}
         shadow-normalBias={0.03}
       />
-      <directionalLight position={[c.x + 10, 8, c.z + 12]} intensity={0.45} color="#dfe8ff" />
+      <directionalLight position={[c.x + 10, 8, c.z + 12]} intensity={daylight.fill.intensity} color={daylight.fill.color} />
       <Environment resolution={128} frames={1}>
         <Lightformer form="rect" intensity={2} position={[0, 5, -6]} scale={[10, 3, 1]} />
         <Lightformer form="rect" intensity={1.2} position={[-6, 3, 0]} rotation-y={Math.PI / 2} scale={[8, 2, 1]} color="#ffe9d6" />
@@ -303,6 +311,7 @@ function Lights({ plan }: { plan: FloorPlan }) {
 export function OfficeScene({
   office,
   room,
+  daylight,
   focus,
   onSelect,
   insetRight = 0,
@@ -310,6 +319,8 @@ export function OfficeScene({
   /** The sessions in the room on screen. */
   office: Office;
   room: RoomTheme;
+  /** The hour's light, from `useDaylight`. */
+  daylight: Daylight;
   focus: Focus;
   onSelect: (f: Focus) => void;
   /** Pixels on the right covered by HUD panels; the camera frames the remaining area. */
@@ -367,15 +378,17 @@ export function OfficeScene({
         />
         <CameraRig room={room.kind} plan={plan} breaks={breaks} focus={focus} insetRight={insetRight} />
         <FrameDriver fps={fps} />
-        <ShadowBudget version={office} />
+        <ShadowBudget version={office} light={daylight.hour} />
         <ZoomWatcher threshold={72} onChange={setFar} />
-        <Lights plan={plan} />
-        <BreakPresence.Provider value={presence}>
-          <Room plan={plan} theme={room} />
-          {plan.pods.map((pod) => (
-            <PodZone key={pod.projectKey} pod={pod} plan={plan} breaks={breaks} focus={focus} onSelect={onSelect} far={far} />
-          ))}
-        </BreakPresence.Provider>
+        <Lights plan={plan} daylight={daylight} />
+        <DaylightContext.Provider value={daylight}>
+          <BreakPresence.Provider value={presence}>
+            <Room plan={plan} theme={room} />
+            {plan.pods.map((pod) => (
+              <PodZone key={pod.projectKey} pod={pod} plan={plan} breaks={breaks} focus={focus} onSelect={onSelect} far={far} />
+            ))}
+          </BreakPresence.Provider>
+        </DaylightContext.Provider>
       </Canvas>
     </LabelLayer.Provider>
   );

@@ -5,6 +5,7 @@ import { TopBar } from "./hud/TopBar";
 import { AgentList } from "./hud/AgentList";
 import { isPreview, subscribePreview } from "./preview";
 import { ROOMS, officeInRoom, roomTheme } from "./scene/rooms";
+import { timeOverridden, useDaylight } from "./scene/daylight";
 import type { AgentKind, Office } from "./types";
 
 export type { AgentKind, AgentState, FeedEvent, Office, Session, Subagent } from "./types";
@@ -143,6 +144,12 @@ function useMediaQuery(query: string): boolean {
 
 // ── App ──────────────────────────────────────────────────────
 
+function formatHour(hour: number): string {
+  const h = Math.floor(hour);
+  const m = Math.floor((hour - h) * 60);
+  return `${h}:${String(m).padStart(2, "0")}`;
+}
+
 export function App() {
   const { office, connected } = useOffice();
   const [focus, setFocus] = useState<Focus>(null);
@@ -155,6 +162,13 @@ export function App() {
   const wide = useMediaQuery("(min-width: 901px)");
   useTabTitle(office.waitingCount);
   useFaviconBadge(office.waitingCount);
+  const daylight = useDaylight();
+  // the page behind the diorama dims with the evening so the lit office reads against it
+  useEffect(() => {
+    const root = document.documentElement.style;
+    root.setProperty("--bg-top", daylight.page.top);
+    root.setProperty("--bg-bottom", daylight.page.bottom);
+  }, [daylight.page.top, daylight.page.bottom]);
 
   const focusedSession = focus ? roomOffice.sessions[focus.pid] : undefined;
   useEffect(() => {
@@ -165,7 +179,7 @@ export function App() {
   return (
     <div className="app-shell">
       <div className="scene">
-        <OfficeScene office={roomOffice} room={theme} focus={focus} onSelect={setFocus} insetRight={sideOpen && wide ? 380 : 0} />
+        <OfficeScene office={roomOffice} room={theme} daylight={daylight} focus={focus} onSelect={setFocus} insetRight={sideOpen && wide ? 380 : 0} />
       </div>
 
       <TopBar
@@ -177,6 +191,7 @@ export function App() {
         }}
         connected={connected}
         preview={isPreview}
+        clock={timeOverridden ? formatHour(daylight.hour) : undefined}
       />
 
       {Object.keys(roomOffice.sessions).length === 0 && (
