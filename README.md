@@ -20,6 +20,12 @@ Append `&preview` to the printed URL to see a synthetic office that cycles throu
 
 The office keeps your local time. Sun comes in through the west windows and swings round the room over the day, the city outside fades to lights at dusk, and the pendants, floor lamp and desk lamps come on in the evening; the wall clock over the coffee bar shows the real time. To review a particular hour, append `&time=HH` or `&time=HH:MM` to the URL to pin the clock, or `&time=cycle` to run a whole day in under a minute.
 
+## Getting around
+
+The office moves like a game. In the overview, `W A S D` or the arrow keys pan, `Q`/`E` orbit, `+`/`−` or the wheel zoom (toward the pointer), double-click zooms in on a spot, `Home` fits the room and `Shift` speeds everything up. Press `V` to walk the floor: a first-person camera at eye height, `W A S D` to walk and strafe, drag to look around, double-click to lock the mouse for proper first-person look (`Esc` frees it), `Shift` to run. Clicking an agent still opens their panel and, when walking, turns you to face them. `N` jumps to the next agent waiting on you, `Esc` backs out, and `H` lists the keys.
+
+The pad in the bottom-right does the same with a mouse or a finger, and the minimap in the bottom-left shows pods, agents in their state colours and where you are; click it to go there.
+
 ## Rooms
 
 Each kind of AI coding agent has its own room, shown one at a time. Tabs in the top bar switch rooms and show each room's agent count and how many of its agents are waiting on you; the browser tab title counts every room.

@@ -1,10 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Environment, Lightformer, OrbitControls, OrthographicCamera, RoundedBox } from "@react-three/drei";
-import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import type { Office } from "../types";
 import { createAllocators, planFloor, routeToBreak, type Allocators, type BreakSpot, type FloorPlan, type Pod } from "./layout";
+import { NavBridge, OverviewRig, VIEW_DIR, WalkRig, useNavKeys } from "./Navigator";
+import { clampToRoom, createNavStore, nextAttention, type NavCommand, type ViewMode } from "./navigation";
+import { MiniMap } from "../hud/MiniMap";
+import { NavHelp, NavPad } from "../hud/NavPad";
 import { BreakAllocator, BreakPresence } from "./breaks";
 import { BeanBag, Room } from "./Room";
 import { Label, LabelLayer } from "./Label";
@@ -17,7 +20,6 @@ import { DaylightContext, type Daylight } from "./daylight";
 
 export type { Focus } from "./Workstation";
 
-const VIEW_DIR = new THREE.Vector3(1, 0.92, 1.12).normalize();
 const ACTIVE_STATES = new Set(["working", "thinking", "waiting_on_user", "error"]);
 
 // ── Pods ─────────────────────────────────────────────────────
@@ -130,94 +132,6 @@ function PodSign({ pod, accent, live, waiting, far }: { pod: Pod; accent: string
 
 function roomCenter(plan: FloorPlan) {
   return new THREE.Vector3((plan.minX + plan.maxX + 1) / 2, 0.4, (plan.minZ + plan.maxZ + 1) / 2);
-}
-
-/**
- * Frames the room exactly: projects its bounding box into the default view and
- * returns the zoom (px per unit) and aim point that fill the free viewport.
- */
-function frameRoom(plan: FloorPlan, width: number, height: number, inset: { right: number; top: number }) {
-  const cam = new THREE.OrthographicCamera();
-  cam.position.copy(VIEW_DIR);
-  cam.lookAt(0, 0, 0);
-  cam.updateMatrixWorld();
-  const box = new THREE.Box3(new THREE.Vector3(plan.minX - 0.15, -0.4, plan.minZ - 0.15), new THREE.Vector3(plan.maxX + 1, 3.1, plan.maxZ + 1));
-  const ext = new THREE.Box3();
-  const p = new THREE.Vector3();
-  for (let i = 0; i < 8; i++) {
-    p.set(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z);
-    ext.expandByPoint(p.applyMatrix4(cam.matrixWorldInverse));
-  }
-  const freeW = width - inset.right - 48;
-  const freeH = height - inset.top - 32;
-  const zoom = Math.min(freeW / (ext.max.x - ext.min.x), freeH / (ext.max.y - ext.min.y));
-  // Camera-space centre of the room, shifted so it lands in the middle of the free area.
-  const center = ext.getCenter(new THREE.Vector3());
-  center.x += inset.right / 2 / zoom;
-  center.y += inset.top / 2 / zoom;
-  return { zoom, target: center.applyMatrix4(cam.matrixWorld), cam };
-}
-
-function focusPoint(plan: FloorPlan, focus: Focus, breaks: Map<number, BreakSpot>): THREE.Vector3 | null {
-  if (!focus) return null;
-  const spot = !focus.subagentId && breaks.get(focus.pid);
-  if (spot) return new THREE.Vector3(spot.x, 1.0, spot.z);
-  for (const pod of plan.pods)
-    for (const d of pod.desks) {
-      if (d.session?.pid !== focus.pid) continue;
-      if (focus.subagentId) {
-        const idx = Object.keys(d.session.subagents ?? {}).indexOf(focus.subagentId);
-        if (idx >= 0 && idx < 3) return new THREE.Vector3(d.x - 0.5 + idx * 0.55, 0.8, d.z + 1.42);
-      }
-      return new THREE.Vector3(d.x, 1.0, d.z);
-    }
-  return null;
-}
-
-function CameraRig({ room, plan, breaks, focus, insetRight }: { room: string; plan: FloorPlan; breaks: Map<number, BreakSpot>; focus: Focus; insetRight: number }) {
-  const { camera, size, controls, invalidate } = useThree() as unknown as {
-    camera: THREE.OrthographicCamera;
-    size: { width: number; height: number };
-    controls: OrbitControlsImpl | null;
-    invalidate: () => void;
-  };
-  const goal = useRef<{ target: THREE.Vector3; zoom: number } | null>(null);
-  const frame = frameRoom(plan, size.width, size.height, { right: insetRight, top: 72 });
-  // Switching rooms re-frames even when both rooms happen to be the same size.
-  const boundsKey = `${room},${plan.minX},${plan.maxX},${plan.minZ},${plan.maxZ},${size.width},${size.height},${insetRight}`;
-  const focusKey = focus ? `${focus.pid}:${focus.subagentId ?? ""}:${breaks.get(focus.pid)?.id ?? ""}` : "";
-
-  useEffect(() => {
-    const p = focusPoint(plan, focus, breaks);
-    if (!p) {
-      goal.current = { target: frame.target, zoom: frame.zoom };
-    } else {
-      const zoom = Math.max(frame.zoom * 2.6, 80);
-      // Keep the focused agent centred in the area beside the side panel.
-      const right = new THREE.Vector3().setFromMatrixColumn(frame.cam.matrixWorld, 0).multiplyScalar(insetRight / 2 / zoom);
-      goal.current = { target: p.clone().add(right), zoom };
-    }
-    invalidate();
-    // plan changes every tick; only re-aim when the room or the focus changes
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [boundsKey, focusKey]);
-
-  useFrame((_, dt) => {
-    const g = goal.current;
-    if (!g || !controls) return;
-    const k = 1 - Math.exp(-dt * 5);
-    controls.target.lerp(g.target, k);
-    camera.zoom += (g.zoom - camera.zoom) * k;
-    const dist = camera.position.distanceTo(controls.target);
-    const dir = camera.position.clone().sub(controls.target).normalize();
-    camera.position.copy(controls.target).add(dir.multiplyScalar(dist));
-    camera.updateProjectionMatrix();
-    controls.update();
-    if (controls.target.distanceTo(g.target) < 0.01 && Math.abs(camera.zoom - g.zoom) < 0.05) goal.current = null;
-    else invalidate();
-  });
-
-  return null;
 }
 
 /**
@@ -351,6 +265,60 @@ export function OfficeScene({
   const [far, setFar] = useState(true);
   const center = roomCenter(plan);
 
+  // ── Navigation ─────────────────────────────────────────────
+  const store = useMemo(createNavStore, []);
+  const [mode, setMode] = useState<ViewMode>("overview");
+  const [help, setHelp] = useState(false);
+  store.mode = mode;
+  const ortho = useRef<THREE.OrthographicCamera>(null);
+  const fit = useCallback(() => {
+    if (store.frame) store.goal = { target: store.frame.target.clone(), zoom: store.frame.zoom };
+    store.kick();
+  }, [store]);
+  const toggleMode = useCallback(() => {
+    setMode((m) => (m === "overview" ? "walk" : "overview"));
+    setHelp(false);
+  }, []);
+  const command = useCallback(
+    (c: NavCommand) => {
+      switch (c) {
+        case "fit":
+          if (mode === "overview") fit();
+          return;
+        case "toggleMode":
+          return toggleMode();
+        case "help":
+          return setHelp((h) => !h);
+        case "nextAttention": {
+          const next = nextAttention(Object.values(office.sessions), focus?.pid ?? null);
+          if (next) onSelect({ pid: next.pid });
+          return;
+        }
+        case "escape":
+          if (help) return setHelp(false);
+          if (focus) return onSelect(null);
+          if (mode === "walk") setMode("overview");
+          return;
+      }
+    },
+    [mode, fit, toggleMode, office, focus, onSelect, help],
+  );
+  useNavKeys(store, command);
+  const jump = useCallback(
+    (x: number, z: number) => {
+      const [cx, cz] = clampToRoom(x, z, { minX: plan.minX, maxX: plan.maxX + 1, minZ: plan.minZ, maxZ: plan.maxZ + 1 });
+      if (store.mode === "walk") {
+        store.walker.x = cx;
+        store.walker.z = cz;
+        store.lookAt = null;
+      } else {
+        store.goal = { target: new THREE.Vector3(cx, 0.4, cz), zoom: Math.max(store.pose.zoom, 40) };
+      }
+      store.kick();
+    },
+    [store, plan.minX, plan.maxX, plan.minZ, plan.maxZ],
+  );
+
   const labelLayer = useRef<HTMLDivElement>(null);
 
   return (
@@ -363,9 +331,11 @@ export function OfficeScene({
         gl={{ antialias: true, alpha: true }}
         onPointerMissed={() => onSelect(null)}
       >
-        <OrthographicCamera makeDefault position={center.clone().add(VIEW_DIR.clone().multiplyScalar(60)).toArray()} zoom={40} near={0.1} far={400} />
+        <OrthographicCamera ref={ortho} makeDefault position={center.clone().add(VIEW_DIR.clone().multiplyScalar(60)).toArray()} zoom={40} near={0.1} far={400} />
         <OrbitControls
           makeDefault
+          camera={ortho.current ?? undefined}
+          enabled={mode === "overview"}
           target={center.toArray() as [number, number, number]}
           enableDamping={false}
           minPolarAngle={0.55}
@@ -375,8 +345,15 @@ export function OfficeScene({
           minZoom={12}
           maxZoom={260}
           screenSpacePanning
+          zoomToCursor
+          onStart={() => {
+            // a drag takes over from any flight in progress
+            store.goal = null;
+          }}
         />
-        <CameraRig room={room.kind} plan={plan} breaks={breaks} focus={focus} insetRight={insetRight} />
+        <OverviewRig room={room.kind} plan={plan} breaks={breaks} focus={focus} insetRight={insetRight} store={store} active={mode === "overview"} />
+        {mode === "walk" && <WalkRig plan={plan} breaks={breaks} focus={focus} store={store} />}
+        <NavBridge store={store} />
         <FrameDriver fps={fps} />
         <ShadowBudget version={office} light={daylight.hour} />
         <ZoomWatcher threshold={72} onChange={setFar} />
@@ -385,11 +362,14 @@ export function OfficeScene({
           <BreakPresence.Provider value={presence}>
             <Room plan={plan} theme={room} />
             {plan.pods.map((pod) => (
-              <PodZone key={pod.projectKey} pod={pod} plan={plan} breaks={breaks} focus={focus} onSelect={onSelect} far={far} />
+              <PodZone key={pod.projectKey} pod={pod} plan={plan} breaks={breaks} focus={focus} onSelect={onSelect} far={far && mode === "overview"} />
             ))}
           </BreakPresence.Provider>
         </DaylightContext.Provider>
       </Canvas>
+      <MiniMap plan={plan} office={office} breaks={breaks} store={store} onJump={jump} />
+      <NavPad store={store} mode={mode} onToggleMode={toggleMode} onFit={fit} onHelp={() => setHelp((h) => !h)} helpOpen={help} insetRight={insetRight} />
+      {help && <NavHelp mode={mode} onClose={() => setHelp(false)} insetRight={insetRight} />}
     </LabelLayer.Provider>
   );
 }
