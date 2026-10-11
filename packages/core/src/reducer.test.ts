@@ -633,6 +633,136 @@ describe("reducer", () => {
     });
   });
 
+  describe("antigravity sessions", () => {
+    const T0 = Date.parse("2026-01-01T10:00:00Z");
+    const SEC = 1000;
+    const MIN = 60_000;
+    const PID = -1;
+    const agy = (overrides: Partial<SessionAppeared> = {}) =>
+      appeared({
+        pid: PID,
+        sessionId: "0f0e0d0c-0000-4000-8000-000000000001",
+        cwd: "",
+        name: "agy-0f0e0d0c",
+        projectKey: "antigravity",
+        startedAt: T0,
+        agent: "antigravity",
+        ...overrides,
+      });
+    let stepIndex = 0;
+    const step = (at: number, fields: Record<string, unknown>) => ({
+      type: "transcript_line" as const,
+      pid: PID,
+      line: { step_index: stepIndex++, created_at: new Date(at).toISOString(), status: "DONE", ...fields },
+    });
+    const userInput = (at: number, content: string) => step(at, { type: "USER_INPUT", source: "USER_EXPLICIT", content });
+    const toolCall = (at: number, name: string, args: Record<string, unknown> = {}) =>
+      step(at, { type: "PLANNER_RESPONSE", source: "MODEL", tool_calls: [{ name, args }] });
+    const toolResult = (at: number) => step(at, { type: "GENERIC", source: "SYSTEM", content: "exit code 0" });
+    const reply = (at: number, content: string, status = "DONE") => step(at, { type: "PLANNER_RESPONSE", source: "MODEL", content, status });
+    const tick = (now: number) => ({ type: "tick" as const, now });
+
+    it("puts sessions in the Claude room unless the adapter says otherwise", () => {
+      const office = officeWith(appeared(), agy());
+      expect(office.sessions[1001]!.agent).toBe("claude");
+      expect(office.sessions[PID]!.agent).toBe("antigravity");
+    });
+
+    it("follows a turn from the prompt through a tool call to the final answer", () => {
+      let office = officeWith(agy(), userInput(T0, "Fix the flaky checkout test"));
+      expect(office.sessions[PID]!.state).toBe("thinking");
+
+      office = reduce(office, toolCall(T0 + SEC, "run_command", { CommandLine: "pnpm test" }));
+      expect(office.sessions[PID]!.state).toBe("working");
+      expect(office.sessions[PID]!.currentTool).toBe("run_command");
+
+      office = reduce(office, toolResult(T0 + 2 * SEC));
+      expect(office.sessions[PID]!.state).toBe("thinking");
+      expect(office.sessions[PID]!.currentTool).toBeUndefined();
+
+      office = reduce(office, reply(T0 + 3 * SEC, "The test is fixed."));
+      const s = office.sessions[PID]!;
+      expect(s.state).toBe("idle");
+      expect(s.lastPrompt).toBe("Fix the flaky checkout test");
+      expect(s.title).toBe("Fix the flaky checkout test");
+      expect(s.feed.map((e) => [e.type, e.excerpt])).toEqual([
+        ["text", "Fix the flaky checkout test"],
+        ["tool_use", "Used tool: run_command"],
+        ["tool_result", "Tool finished: run_command"],
+        ["text", "The test is fixed."],
+      ]);
+    });
+
+    it("keeps the first prompt as the title and the latest as the last prompt", () => {
+      const office = officeWith(agy(), userInput(T0, "Add dark mode"), reply(T0 + SEC, "Done."), userInput(T0 + 2 * SEC, "Now the settings page"));
+      expect(office.sessions[PID]!.title).toBe("Add dark mode");
+      expect(office.sessions[PID]!.lastPrompt).toBe("Now the settings page");
+    });
+
+    it("reads the request out of a tagged prompt", () => {
+      const office = officeWith(agy(), userInput(T0, "<USER_REQUEST>\nRename the module\n</USER_REQUEST>\n<ADDITIONAL_METADATA>cursor 3:1</ADDITIONAL_METADATA>"));
+      expect(office.sessions[PID]!.lastPrompt).toBe("Rename the module");
+    });
+
+    it("shows a response that is still streaming as thinking", () => {
+      const office = officeWith(agy(), userInput(T0, "Explain the cache"), reply(T0 + SEC, "The cache", "RUNNING"));
+      expect(office.sessions[PID]!.state).toBe("thinking");
+    });
+
+    it("replaces a step's feed entry when the step is written again", () => {
+      const running = reply(T0 + SEC, "The cache", "RUNNING");
+      const done = { ...running, line: { ...running.line, status: "DONE", content: "The cache is warm." } };
+      const office = officeWith(agy(), userInput(T0, "Explain the cache"), running, done);
+      expect(office.sessions[PID]!.state).toBe("idle");
+      expect(office.sessions[PID]!.feed.map((e) => e.excerpt)).toEqual(["Explain the cache", "The cache is warm."]);
+    });
+
+    it("shows an error step as the error state", () => {
+      const office = officeWith(agy(), toolCall(T0, "view_file"), step(T0 + SEC, { type: "ERROR_MESSAGE", source: "SYSTEM", content: "Model quota exceeded" }));
+      expect(office.sessions[PID]!.state).toBe("error");
+      expect(office.sessions[PID]!.currentTool).toBeUndefined();
+      expect(office.sessions[PID]!.feed.at(-1)).toMatchObject({ type: "error", excerpt: "Model quota exceeded" });
+    });
+
+    it("skips steps it does not recognise", () => {
+      const before = officeWith(agy(), toolCall(T0, "view_file"));
+      const after = [
+        step(T0 + SEC, { type: "SYSTEM_MESSAGE", source: "SYSTEM" }),
+        step(T0 + SEC, { type: "CHECKPOINT" }),
+        step(T0 + SEC, { type: "SOMETHING_NEW", content: 42 }),
+        step(T0 + SEC, { type: "PLANNER_RESPONSE", tool_calls: "not a list", content: { nested: true } }),
+        { type: "transcript_line" as const, pid: PID, line: null },
+        { type: "transcript_line" as const, pid: PID, line: "not json" },
+      ].reduce(reduce, before);
+      expect(after.sessions[PID]!.state).toBe("working");
+      expect(after.sessions[PID]!.currentTool).toBe("view_file");
+    });
+
+    it("infers waiting on you when a tool call runs past the threshold", () => {
+      const office = officeWith(agy(), toolCall(T0, "run_command"), tick(T0 + 20 * SEC));
+      expect(office.sessions[PID]!.state).toBe("waiting_on_user");
+      expect(office.waitingCount).toBe(1);
+    });
+
+    it("goes on break after the idle threshold and comes back for the next prompt", () => {
+      let office = officeWith(agy(), userInput(T0, "Ship it"), reply(T0 + SEC, "Shipped."), tick(T0 + 6 * MIN));
+      expect(office.sessions[PID]!.onBreak).toBe(true);
+      office = reduce(office, userInput(T0 + 7 * MIN, "One more thing"));
+      expect(office.sessions[PID]!.onBreak).toBe(false);
+    });
+
+    it("moves to its project pod once the workspace is known", () => {
+      const office = officeWith(agy(), { type: "session_workspace", pid: PID, cwd: "/projects/acme-app/web", projectKey: "acme-app" });
+      expect(office.sessions[PID]!.projectKey).toBe("acme-app");
+      expect(office.sessions[PID]!.cwd).toBe("/projects/acme-app/web");
+    });
+
+    it("leaves Claude transcripts to the Claude parser", () => {
+      const office = officeWith(appeared(), { type: "transcript_line", pid: 1001, line: { type: "USER_INPUT", content: "hi" } });
+      expect(office.sessions[1001]!.lastPrompt).toBeUndefined();
+    });
+  });
+
   describe("tick", () => {
     it("returns the same office when nothing changed, so the server can skip the broadcast", () => {
       const office = officeWith(appeared(), { type: "tick", now: 1700000001000 });

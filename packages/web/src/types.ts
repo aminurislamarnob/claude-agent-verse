@@ -2,6 +2,9 @@
 
 export type AgentState = "working" | "thinking" | "idle" | "error" | "ended" | "waiting_on_user";
 
+/** Which AI coding agent a session belongs to; each kind has its own room. */
+export type AgentKind = "claude" | "antigravity";
+
 export interface Subagent {
   subagentId: string;
   agentType: string;
@@ -19,7 +22,10 @@ export interface FeedEvent {
 }
 
 export interface Session {
+  /** Process id, or a synthetic negative id for agents without one (Antigravity). */
   pid: number;
+  /** Absent from older servers, which only knew Claude Code. */
+  agent?: AgentKind;
   sessionId: string;
   cwd: string;
   name: string;

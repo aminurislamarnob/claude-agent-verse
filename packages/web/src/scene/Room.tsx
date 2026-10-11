@@ -4,10 +4,11 @@ import { useFrame, type ThreeElements } from "@react-three/fiber";
 import { RoundedBox } from "@react-three/drei";
 import { DeskPlant, FloorPlant, Mug } from "./Props";
 import { palette } from "./theme";
-import { posterTexture, screenTexture, skylineTexture, whiteboardTexture, woodTexture } from "./textures";
+import { nameplateTexture, posterTexture, screenTexture, skylineTexture, whiteboardTexture, woodTexture } from "./textures";
 import { COFFEE_TABLE, LOUNGE, type FloorPlan } from "./layout";
 import { HighTable, PlayZone } from "./PlayZone";
 import { StaticBatch } from "./StaticBatch";
+import type { RoomTheme } from "./rooms";
 
 type GroupProps = ThreeElements["group"];
 
@@ -45,7 +46,7 @@ function Floor({ plan }: { plan: FloorPlan }) {
   );
 }
 
-function Walls({ plan }: { plan: FloorPlan }) {
+function Walls({ plan, color }: { plan: FloorPlan; color: string }) {
   const w = plan.maxX - plan.minX + 1;
   const d = plan.maxZ - plan.minZ + 1;
   const sky = useMemo(() => skylineTexture(), []);
@@ -56,7 +57,7 @@ function Walls({ plan }: { plan: FloorPlan }) {
       {/* back wall */}
       <mesh position={[(plan.minX + plan.maxX + 1) / 2, WALL_H / 2, plan.minZ - WALL_T / 2]} receiveShadow castShadow>
         <boxGeometry args={[w + WALL_T * 2, WALL_H, WALL_T]} />
-        <meshStandardMaterial color={palette.wall} roughness={0.92} />
+        <meshStandardMaterial color={color} roughness={0.92} />
       </mesh>
       <mesh position={[(plan.minX + plan.maxX + 1) / 2, 0.06, plan.minZ + 0.01]}>
         <boxGeometry args={[w, 0.12, 0.02]} />
@@ -66,7 +67,7 @@ function Walls({ plan }: { plan: FloorPlan }) {
       <group position={[plan.minX - WALL_T / 2, 0, plan.minZ]}>
         <mesh position={[0, WALL_H / 2, d / 2]} castShadow receiveShadow>
           <boxGeometry args={[WALL_T, WALL_H, d]} />
-          <meshStandardMaterial color={palette.wall} roughness={0.92} />
+          <meshStandardMaterial color={color} roughness={0.92} />
         </mesh>
         {Array.from({ length: winCount }).map((_, i) => {
           const z = 0.6 + winSpan * (i + 0.5);
@@ -100,7 +101,7 @@ function Walls({ plan }: { plan: FloorPlan }) {
 
 // ── Lounge & culture pieces ──────────────────────────────────
 
-function Sofa(props: GroupProps) {
+function Sofa({ accent = palette.accent, ...props }: { accent?: string } & GroupProps) {
   const fabric = "#8a93a6";
   return (
     <group {...props}>
@@ -122,7 +123,7 @@ function Sofa(props: GroupProps) {
       ))}
       {/* cushions */}
       <RoundedBox args={[0.36, 0.34, 0.12]} radius={0.06} position={[-0.62, 0.7, -0.14]} rotation={[-0.2, 0.2, 0.1]} castShadow>
-        <meshStandardMaterial color={palette.accent} roughness={1} />
+        <meshStandardMaterial color={accent} roughness={1} />
       </RoundedBox>
       <RoundedBox args={[0.34, 0.32, 0.12]} radius={0.06} position={[0.66, 0.7, -0.14]} rotation={[-0.2, -0.2, -0.08]} castShadow>
         <meshStandardMaterial color="#e8e4dc" roughness={1} />
@@ -139,7 +140,7 @@ function Sofa(props: GroupProps) {
   );
 }
 
-function CoffeeTable(props: GroupProps) {
+function CoffeeTable({ accent = palette.accent, ...props }: { accent?: string } & GroupProps) {
   return (
     <group {...props}>
       <mesh position={[0, 0.36, 0]} castShadow receiveShadow>
@@ -150,7 +151,7 @@ function CoffeeTable(props: GroupProps) {
         <cylinderGeometry args={[0.04, 0.12, 0.34, 16]} />
         <meshStandardMaterial color={palette.ink} roughness={0.4} metalness={0.4} />
       </mesh>
-      <Mug position={[0.12, 0.38, 0.05]} color={palette.accent} />
+      <Mug position={[0.12, 0.38, 0.05]} color={accent} />
       <RoundedBox args={[0.22, 0.02, 0.3]} radius={0.005} position={[-0.12, 0.39, -0.04]} rotation={[0, 0.4, 0]}>
         <meshStandardMaterial color="#2f3440" roughness={0.6} />
       </RoundedBox>
@@ -238,7 +239,7 @@ function WallScreen(props: GroupProps) {
   );
 }
 
-function Credenza(props: GroupProps) {
+function Credenza({ accent = palette.accent, ...props }: { accent?: string } & GroupProps) {
   return (
     <group {...props}>
       <RoundedBox args={[1.9, 0.56, 0.46]} radius={0.02} position={[0, 0.3, 0]} castShadow receiveShadow>
@@ -267,7 +268,7 @@ function Credenza(props: GroupProps) {
       {/* tiny robot figure */}
       <group position={[0.75, 0.58, 0]}>
         <RoundedBox args={[0.1, 0.1, 0.08]} radius={0.02} position={[0, 0.06, 0]}>
-          <meshStandardMaterial color={palette.accent} roughness={0.5} />
+          <meshStandardMaterial color={accent} roughness={0.5} />
         </RoundedBox>
         <RoundedBox args={[0.13, 0.1, 0.1]} radius={0.03} position={[0, 0.16, 0]}>
           <meshStandardMaterial color="#f4f2ee" roughness={0.4} />
@@ -324,7 +325,7 @@ function Poster({ kind, ...props }: { kind: "ship" | "grid" | "pixel" } & GroupP
   );
 }
 
-function CoffeeBar(props: GroupProps) {
+function CoffeeBar({ accent = palette.accent, ...props }: { accent?: string } & GroupProps) {
   return (
     <group {...props}>
       <RoundedBox args={[2.2, 0.9, 0.62]} radius={0.02} position={[0, 0.45, 0]} castShadow receiveShadow>
@@ -363,7 +364,7 @@ function CoffeeBar(props: GroupProps) {
       </group>
       {/* cups */}
       {[0.4, 0.55, 0.7].map((x, i) => (
-        <Mug key={x} position={[x, 0.94, 0.1]} color={["#f4f2ee", palette.accent, "#2f3440"][i]} />
+        <Mug key={x} position={[x, 0.94, 0.1]} color={["#f4f2ee", accent, "#2f3440"][i]} />
       ))}
       {/* open shelf above */}
       <group position={[0, 2.0, -0.2]}>
@@ -505,6 +506,22 @@ function Bookshelf(props: GroupProps) {
   );
 }
 
+/** The room's name, high on the back wall where it reads from any angle. */
+function Nameplate({ theme, ...props }: { theme: RoomTheme } & GroupProps) {
+  const tex = useMemo(() => nameplateTexture(theme.name, theme.accent), [theme.name, theme.accent]);
+  return (
+    <group {...props}>
+      <RoundedBox args={[2.4, 0.375, 0.03]} radius={0.012} castShadow>
+        <meshStandardMaterial color={palette.ink} roughness={0.4} />
+      </RoundedBox>
+      <mesh position={[0, 0, 0.016]}>
+        <planeGeometry args={[2.38, 0.36]} />
+        <meshBasicMaterial map={tex} toneMapped={false} />
+      </mesh>
+    </group>
+  );
+}
+
 function Rug({ w, d, ...props }: { w: number; d: number } & GroupProps) {
   return (
     <group {...props}>
@@ -521,7 +538,7 @@ function Rug({ w, d, ...props }: { w: number; d: number } & GroupProps) {
  * The office shell plus culture pieces along the back and left walls.
  * Back-wall pieces are laid out left to right and dropped when the room is too narrow.
  */
-export function Room({ plan }: { plan: FloorPlan }) {
+export function Room({ plan, theme }: { plan: FloorPlan; theme: RoomTheme }) {
   const bz = plan.minZ; // back wall interior face
   const lx = plan.minX; // left wall interior face
   const right = plan.maxX + 1;
@@ -531,10 +548,11 @@ export function Room({ plan }: { plan: FloorPlan }) {
       case "lounge":
         return (
           <group key={kind} position={[x, 0, bz]}>
+            <Nameplate theme={theme} position={[0, 2.72, 0.03]} />
             <Whiteboard position={[0, 1.75, 0.03]} />
             <Rug w={3.0} d={2.2} position={[0, 0, 1.45]} />
-            <Sofa position={[LOUNGE.sofa.x, 0, LOUNGE.sofa.z]} />
-            <CoffeeTable position={[LOUNGE.table.x, 0, LOUNGE.table.z]} />
+            <Sofa position={[LOUNGE.sofa.x, 0, LOUNGE.sofa.z]} accent={theme.accent} />
+            <CoffeeTable position={[LOUNGE.table.x, 0, LOUNGE.table.z]} accent={theme.accent} />
             {LOUNGE.beanBags.map((p, i) => (
               <BeanBag key={i} position={[p.x, 0, p.z]} rotation={[0, p.facing, 0]} color={i ? "#d9a066" : "#8a93a6"} />
             ))}
@@ -543,9 +561,9 @@ export function Room({ plan }: { plan: FloorPlan }) {
       case "coffee":
         return (
           <group key={kind} position={[x, 0, bz]}>
-            <CoffeeBar position={[0, 0, 0.36]} />
+            <CoffeeBar position={[0, 0, 0.36]} accent={theme.accent} />
             <HighTable position={[COFFEE_TABLE.x, 0, COFFEE_TABLE.z]} />
-            <Mug position={[COFFEE_TABLE.x + 0.1, 0.857, COFFEE_TABLE.z + 0.08]} color={palette.accent} />
+            <Mug position={[COFFEE_TABLE.x + 0.1, 0.857, COFFEE_TABLE.z + 0.08]} color={theme.accent} />
           </group>
         );
       case "play":
@@ -554,13 +572,13 @@ export function Room({ plan }: { plan: FloorPlan }) {
         return (
           <group key={kind} position={[x, 0, bz]}>
             <WallScreen position={[0, 1.65, 0.04]} />
-            <Credenza position={[0, 0, 0.3]} />
+            <Credenza position={[0, 0, 0.3]} accent={theme.accent} />
           </group>
         );
       case "neon":
         return (
           <group key={kind} position={[x, 0, bz]}>
-            <NeonSign position={[0, 1.95, 0.03]} />
+            <NeonSign position={[0, 1.95, 0.03]} color={theme.neon} />
             <Poster kind="ship" position={[-0.35, 0.95, 0.03]} rotation={[0, 0, 0.02]} />
             <Poster kind="grid" position={[0.38, 0.95, 0.03]} rotation={[0, 0, -0.02]} />
           </group>
@@ -576,12 +594,12 @@ export function Room({ plan }: { plan: FloorPlan }) {
   });
 
   const sideLen = plan.maxZ + 1 - bz;
-  const layout = `${lx},${right},${bz},${plan.maxZ},${plan.amenities.zones.map((z) => z.kind).join()}`;
+  const layout = `${theme.kind},${lx},${right},${bz},${plan.maxZ},${plan.amenities.zones.map((z) => z.kind).join()}`;
 
   return (
     <StaticBatch version={layout}>
       <Floor plan={plan} />
-      <Walls plan={plan} />
+      <Walls plan={plan} color={theme.wall} />
       {zones}
       {/* corner + left-wall pieces */}
       <FloorPlant position={[lx + 0.5, 0, bz + 0.5]} size={1.25} />

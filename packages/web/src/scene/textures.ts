@@ -465,6 +465,22 @@ export function signTexture(name: string, detail: string, color: string, alert: 
   });
 }
 
+/** Lettered plate with the room's name, mounted high on the back wall. */
+export function nameplateTexture(name: string, color: string) {
+  return make(`nameplate:${name}:${color}`, 1024, 160, (ctx, w, h) => {
+    ctx.fillStyle = "#1d1f24";
+    roundRect(ctx, 0, 0, w, h, 24);
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(86, h / 2, 26, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#f4f2ee";
+    ctx.font = "700 84px -apple-system, BlinkMacSystemFont, 'SF Pro Display', Inter, sans-serif";
+    ctx.textBaseline = "middle";
+    ctx.fillText(name, 142, h / 2 + 4, w - 180);
+  });
+}
+
 /** Flip scoreboard for the play zone. */
 export function scoreboardTexture() {
   return make("scoreboard", 512, 256, (ctx, w, h) => {

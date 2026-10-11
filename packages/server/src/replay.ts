@@ -28,7 +28,7 @@ async function parseArgs() {
   return { fixture: join(process.cwd(), fixture), speed };
 }
 
-async function collectWrites(fixtureDir: string, destDir: string): Promise<WriteAction[]> {
+async function collectWrites(fixtureDir: string, destDir: string, geminiDest: string): Promise<WriteAction[]> {
   const writes: WriteAction[] = [];
 
   // Parse sessions
@@ -135,18 +135,46 @@ async function collectWrites(fixtureDir: string, destDir: string): Promise<Write
     }
   } catch {}
 
+  // Antigravity conversations: gemini/<root>/brain/<id>/.system_generated/logs/transcript.jsonl
+  try {
+    const geminiDir = join(fixtureDir, "gemini");
+    for (const root of await readdir(geminiDir)) {
+      const ids = await readdir(join(geminiDir, root, "brain")).catch(() => [] as string[]);
+      for (const id of ids) {
+        const rel = join(root, "brain", id, ".system_generated", "logs", "transcript.jsonl");
+        const content = await readFile(join(geminiDir, rel), "utf-8").catch(() => "");
+        for (const line of content.split("\n").filter((l) => l.trim())) {
+          try {
+            const at = Date.parse(JSON.parse(line).created_at);
+            writes.push({
+              timestamp: Number.isNaN(at) ? Date.now() : at,
+              execute: async () => {
+                const dest = join(geminiDest, rel);
+                await mkdir(dirname(dest), { recursive: true });
+                await appendFile(dest, line + "\n", "utf-8");
+              },
+            });
+          } catch {}
+        }
+      }
+    }
+  } catch {}
+
   return writes.sort((a, b) => a.timestamp - b.timestamp);
 }
 
 async function main() {
   const { fixture, speed } = await parseArgs();
   const claudeHome = join(process.cwd(), "tmp", "replay", Date.now().toString());
+  // Always a mock, so the developer's real Antigravity conversations stay out of replay.
+  const antigravityHome = join(claudeHome, "gemini");
 
   console.log(`[replay] Fixture: ${fixture}`);
   console.log(`[replay] Speed: ${speed}x`);
   console.log(`[replay] Mock CLAUDE_HOME: ${claudeHome}`);
+  console.log(`[replay] Mock ANTIGRAVITY_HOME: ${antigravityHome}`);
 
-  const writes = await collectWrites(fixture, claudeHome);
+  const writes = await collectWrites(fixture, claudeHome, antigravityHome);
   if (writes.length === 0) {
     console.error("[replay] No events found in fixture.");
     process.exit(1);
@@ -155,12 +183,14 @@ async function main() {
   // Create empty dirs
   await mkdir(join(claudeHome, "sessions"), { recursive: true });
   await mkdir(join(claudeHome, "projects"), { recursive: true });
+  await mkdir(antigravityHome, { recursive: true });
 
   // Start main.ts
   const server = spawn("npx", ["tsx", join(__dirname, "main.ts")], {
     env: {
       ...process.env,
       CLAUDE_HOME: claudeHome,
+      ANTIGRAVITY_HOME: antigravityHome,
       CLAUDE_REPLAY_MODE: "1",
     },
     stdio: "inherit",
