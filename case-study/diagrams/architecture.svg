@@ -1,0 +1,64 @@
+<svg viewBox="0 0 1020 300" role="img" aria-label="Architecture of Claude Agent Verse. Local Claude Code registries, transcripts, hooks, and Antigravity brain logs are read by Node 24 server adapters, which emit domain events into the pure state reducer in core. When the reducer returns a new Office, the server coalesces snapshots over 100 milliseconds and broadcasts them over an Origin-checked, token-guarded WebSocket to the React Three Fiber 3D office in the browser." xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="ah" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="d-m" d="M0 0L8 4L0 8z"/></marker>
+    <marker id="aa" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="d-ma" d="M0 0L8 4L0 8z"/></marker>
+  </defs>
+
+  <rect class="d-zone" x="20" y="24" width="250" height="252" rx="8"/>
+  <text class="d-z" x="36" y="46">Local machine · ~/.claude &amp; ~/.gemini</text>
+
+  <rect class="d-box" x="38" y="64" width="214" height="54" rx="6"/>
+  <text class="d-t" x="145" y="88" text-anchor="middle">Claude Code</text>
+  <text class="d-s" x="145" y="106" text-anchor="middle">sessions/*.json &amp; *.jsonl</text>
+
+  <rect class="d-box" x="38" y="132" width="214" height="54" rx="6"/>
+  <text class="d-t" x="145" y="156" text-anchor="middle">Antigravity</text>
+  <text class="d-s" x="145" y="174" text-anchor="middle">brain/*/transcript.jsonl</text>
+
+  <rect class="d-box" x="38" y="200" width="214" height="54" rx="6"/>
+  <text class="d-t" x="145" y="224" text-anchor="middle">Hook Forwarder</text>
+  <text class="d-s" x="145" y="242" text-anchor="middle">POST /api/hooks (Bearer)</text>
+
+  <line class="d-l" x1="252" y1="91" x2="314" y2="91" marker-end="url(#ah)"/>
+  <line class="d-l" x1="252" y1="159" x2="314" y2="159" marker-end="url(#ah)"/>
+  <line class="d-l" x1="252" y1="227" x2="314" y2="227" marker-end="url(#ah)"/>
+
+  <rect class="d-zone" x="300" y="24" width="320" height="252" rx="8"/>
+  <text class="d-z" x="316" y="46">Node 24 · packages/server &amp; packages/core</text>
+
+  <rect class="d-box" x="320" y="64" width="280" height="54" rx="6"/>
+  <text class="d-t" x="460" y="88" text-anchor="middle">Scanners &amp; FileTailer</text>
+  <text class="d-s" x="460" y="106" text-anchor="middle">stat &amp; JSONL tail · skips unknown</text>
+
+  <rect class="d-check" x="320" y="132" width="280" height="54" rx="6"/>
+  <text class="d-t" x="460" y="156" text-anchor="middle">Pure Reducer (core)</text>
+  <text class="d-s" x="460" y="174" text-anchor="middle">(office, event) → office · zero I/O</text>
+
+  <rect class="d-box" x="320" y="200" width="280" height="54" rx="6"/>
+  <text class="d-t" x="460" y="224" text-anchor="middle">WebSocket Broadcaster</text>
+  <text class="d-s" x="460" y="242" text-anchor="middle">100 ms coalesce · 127.0.0.1 only</text>
+
+  <line class="d-l" x1="460" y1="118" x2="460" y2="129" marker-end="url(#ah)"/>
+  <line class="d-l" x1="460" y1="186" x2="460" y2="197" marker-end="url(#ah)"/>
+
+  <line class="d-a" x1="600" y1="227" x2="734" y2="227" marker-end="url(#aa)"/>
+  <text class="d-at" x="668" y="217" text-anchor="middle">ws://?token=…</text>
+
+  <rect class="d-zone" x="720" y="24" width="280" height="252" rx="8"/>
+  <text class="d-z" x="736" y="46">Browser · packages/web (R3F)</text>
+
+  <rect class="d-box" x="740" y="64" width="240" height="54" rx="6"/>
+  <text class="d-t" x="860" y="88" text-anchor="middle">3D Rooms &amp; StaticBatch</text>
+  <text class="d-s" x="860" y="106" text-anchor="middle">merged meshes per material</text>
+
+  <rect class="d-box" x="740" y="132" width="240" height="54" rx="6"/>
+  <text class="d-t" x="860" y="156" text-anchor="middle">Chibi Characters &amp; Breaks</text>
+  <text class="d-s" x="860" y="174" text-anchor="middle">pose by state · 5 min break</text>
+
+  <rect class="d-box" x="740" y="200" width="240" height="54" rx="6"/>
+  <text class="d-t" x="860" y="224" text-anchor="middle">Top Bar, Tabs &amp; Inspector</text>
+  <text class="d-s" x="860" y="242" text-anchor="middle">click to focus &amp; live feed</text>
+
+  <line class="d-l" x1="860" y1="200" x2="860" y2="189" marker-end="url(#ah)"/>
+  <line class="d-l" x1="860" y1="132" x2="860" y2="121" marker-end="url(#ah)"/>
+</svg>

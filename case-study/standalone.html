@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Claude Agent Verse</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&amp;family=Figtree:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap">
+<style>
+:root{color-scheme:light}
+/* Layout: a dated engineering log. A left rail says when each piece of work happened; the story runs beside it. */
+:root {
+  --paper:#EDF1F2;
+  --surface:#FAFCFC;
+  --ink:#10212A;
+  --muted:#4C5D65;
+  --rule:#C4D0D4;
+  --accent:#0A6372;
+  --me:#0E7D8D;
+  --team:#C47F00;
+  --before:#9AA8AE;
+  --note:#E0EBED;
+  --band:#0D2A35;
+  --band-ink:#F1F5F4;
+  --band-muted:#AFC4CA;
+  --band-rule:#2A4955;
+  --highlight:#F2B9AA;
+  --display:"Bricolage Grotesque",system-ui,sans-serif;
+  --body:"Figtree",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --paper:#0B171D;
+  --surface:#13232B;
+  --ink:#E5EDEF;
+  --muted:#A0B2B8;
+  --rule:#2C3F47;
+  --accent:#5EC7D4;
+  --me:#2AA3B3;
+  --team:#C08A1E;
+  --before:#66767C;
+  --note:#183039;
+  --band:#0D2A35;
+  --band-ink:#F1F5F4;
+  --band-muted:#AFC4CA;
+  --band-rule:#2A4955;
+  --highlight:#F2B9AA;
+  color-scheme:dark;
+} }
+:root[data-theme="dark"] {
+  --paper:#0B171D;
+  --surface:#13232B;
+  --ink:#E5EDEF;
+  --muted:#A0B2B8;
+  --rule:#2C3F47;
+  --accent:#5EC7D4;
+  --me:#2AA3B3;
+  --team:#C08A1E;
+  --before:#66767C;
+  --note:#183039;
+  --band:#0D2A35;
+  --band-ink:#F1F5F4;
+  --band-muted:#AFC4CA;
+  --band-rule:#2A4955;
+  --highlight:#F2B9AA;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{background:var(--paper);color:var(--ink);font:400 17px/1.65 var(--body);margin:0}
+img{max-width:100%}
+a{color:var(--accent);text-underline-offset:3px}
+a:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:2px}
+.gutter{padding-left:max(20px,env(safe-area-inset-left,0px));padding-right:max(20px,env(safe-area-inset-right,0px))}
+.wrap{max-width:1120px;margin-inline:auto}
+h1,h2,h3{font-family:var(--display);text-wrap:balance;margin:0;letter-spacing:-.015em}
+h2{font-size:clamp(1.65rem,1.3rem + 1.4vw,2.35rem);line-height:1.12;font-weight:700}
+h3{font-size:1.15rem;line-height:1.3;font-weight:650;letter-spacing:-.005em}
+p{margin:0}
+code{font:400 .84em var(--mono);background:var(--note);padding:.08em .32em;border-radius:3px;overflow-wrap:anywhere}
+.hero{background:var(--band);color:var(--band-ink);padding-block:clamp(36px,6vw,72px) 0}
+.hero.noshots{padding-block-end:clamp(28px,4vw,48px)}
+.hero a{color:var(--highlight)}
+.eyebrow{font:500 .76rem/1.4 var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--highlight)}
+.hero h1{font-size:clamp(2.45rem,1.5rem + 4.6vw,5rem);line-height:1;font-weight:750;letter-spacing:-.03em;margin-top:18px;max-width:17ch}
+.lede{font-size:clamp(1.08rem,1rem + .4vw,1.3rem);line-height:1.55;max-width:62ch;margin-top:24px;color:var(--band-ink)}
+.hero code{background:var(--band-rule);color:var(--band-ink)}
+.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:18px 28px;margin:34px 0 0;padding:20px 0;border-top:1px solid var(--band-rule)}
+.facts dt{font:500 .72rem/1.4 var(--mono);letter-spacing:.07em;text-transform:uppercase;color:var(--band-muted)}
+.facts dd{margin:4px 0 0;font-size:.98rem;line-height:1.4}
+.shots{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,.262fr);gap:clamp(10px,2vw,22px);align-items:end;margin-top:26px;margin-bottom:-60px;position:relative}
+.shots.single{grid-template-columns:minmax(0,1fr)}
+.shots img{display:block;width:100%;height:auto;border-radius:10px 10px 0 0;box-shadow:0 14px 44px rgba(0,0,0,.4)}
+.shots img.phone{border-radius:14px 14px 0 0}
+.shot-note{padding-top:72px;font:400 .78rem/1.5 var(--mono);color:var(--muted)}
+.noshots + main .shot-note{padding-top:24px}
+section.entry{display:grid;grid-template-columns:150px minmax(0,1fr);gap:0 36px;padding-block:clamp(38px,5vw,62px);border-top:1px solid var(--rule)}
+section.entry.first{border-top:0}
+.rail{font:500 .78rem/1.45 var(--mono);color:var(--accent);padding-top:.5rem}
+.rail span{display:block;color:var(--muted);font-weight:400}
+.col{min-width:0;display:grid;gap:18px}
+.col>p,.col>ul,.col>h2,.col>h3{max-width:68ch}
+.col>h3{margin-top:12px}
+ul.tight{margin:0;padding-left:1.15em;display:grid;gap:8px}
+ul.tight li::marker{color:var(--accent)}
+strong{font-weight:600}
+figure{margin:8px 0;min-width:0}
+figcaption{font-size:.9rem;line-height:1.5;color:var(--muted);margin-top:10px;max-width:68ch}
+.scroll{overflow-x:auto;background:var(--surface);border:1px solid var(--rule);border-radius:8px}
+.scroll svg{display:block;width:100%;height:auto;min-width:680px}
+.shot{display:block;width:100%;height:auto;border-radius:8px;border:1px solid var(--rule)}
+.d-box{fill:var(--surface);stroke:var(--ink);stroke-width:1.2}
+.d-zone{fill:var(--note);stroke:var(--rule);stroke-width:1}
+.d-t{font:600 13px var(--body);fill:var(--ink)}
+.d-s{font:400 11.5px var(--mono);fill:var(--muted)}
+.d-z{font:500 11.5px var(--mono);fill:var(--muted)}
+.d-l{stroke:var(--ink);stroke-width:1.3;fill:none}
+.d-dash{stroke-dasharray:5 4}
+.d-life{stroke:var(--rule);stroke-width:1.2}
+.d-a{stroke:var(--accent);stroke-width:2.2;fill:none}
+.d-at{font:600 12px var(--body);fill:var(--accent)}
+.d-m{fill:var(--ink)} .d-ma{fill:var(--accent)}
+.d-check{fill:var(--note);stroke:var(--accent);stroke-width:1.6}
+.chart{background:var(--surface);border:1px solid var(--rule);border-radius:8px;padding:18px clamp(12px,2.2vw,24px) 12px}
+.chart .in{overflow-x:auto}
+.chart svg{display:block;width:100%;height:auto;min-width:600px}
+.legend{display:flex;flex-wrap:wrap;gap:6px 20px;font-size:.9rem;margin-bottom:10px}
+.legend i{display:inline-block;width:11px;height:11px;border-radius:2px;margin-right:7px;vertical-align:-1px}
+.c-me{fill:var(--me)} .c-team{fill:var(--team)}
+.g-grid{stroke:var(--rule);stroke-width:1;stroke-dasharray:2 4}
+.g-base{stroke:var(--ink);stroke-width:1.2}
+.g-tick{stroke:var(--muted);stroke-width:1}
+.g-ax{font:400 11px var(--mono);fill:var(--muted)}
+.g-m{font:500 12px var(--mono);fill:var(--ink)}
+.g-v{font:500 10.5px var(--mono);fill:var(--muted)}
+.totals{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px 24px;margin-top:6px}
+.totals div{border-top:1px solid var(--rule);padding-top:8px}
+.totals b{display:block;font:650 1.5rem/1.1 var(--display);font-variant-numeric:tabular-nums}
+.totals small{display:block;font:400 .78rem/1.45 var(--mono);color:var(--muted)}
+.ranges{background:var(--surface);border:1px solid var(--rule);border-radius:8px;padding:18px clamp(12px,2.2vw,24px);display:grid;gap:16px}
+.row-h{display:flex;flex-wrap:wrap;justify-content:space-between;gap:2px 14px;font-size:.94rem;margin-bottom:6px}
+.row-h span{font:400 .78rem/1.7 var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
+.track{position:relative;height:30px;background-image:linear-gradient(to right,var(--rule) 1px,transparent 1px);background-size:25% 100%;border-right:1px solid var(--rule)}
+.bar{position:absolute;height:12px;border-radius:0 3px 3px 0;min-width:4px}
+.bar.b{top:2px;background:var(--before)} .bar.a{top:16px;background:var(--me)}
+.axis{display:flex;justify-content:space-between;font:400 .74rem var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
+pre{margin:0;overflow-x:auto;background:var(--surface);border:1px solid var(--rule);border-radius:8px;padding:14px 16px;font:400 .8rem/1.75 var(--mono)}
+pre .t{color:var(--accent);font-weight:500;margin-right:1.2ch}
+.tbl{overflow-x:auto;border:1px solid var(--rule);border-radius:8px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:.94rem;min-width:520px}
+th,td{padding:10px 14px;text-align:left;border-bottom:1px solid var(--rule);vertical-align:top}
+tr:last-child td{border-bottom:0}
+th{font:500 .72rem var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+td.n{font-variant-numeric:tabular-nums;white-space:nowrap}
+.split{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+.split>div{background:var(--surface);border:1px solid var(--rule);border-radius:8px;padding:16px 18px;min-width:0}
+.split h3{margin-bottom:10px;display:flex;align-items:center;gap:9px}
+.split h3 i{width:11px;height:11px;border-radius:2px;display:inline-block}
+.split ul{font-size:.95rem}
+.defs{display:grid;gap:0;margin:0;border-top:1px solid var(--rule)}
+.defs>div{display:grid;grid-template-columns:minmax(0,190px) minmax(0,1fr);gap:4px 22px;padding:14px 0;border-bottom:1px solid var(--rule)}
+.defs dt{font-family:var(--display);font-weight:650;line-height:1.35}
+.defs dd{margin:0;font-size:.97rem;max-width:62ch}
+.muted{font-size:.9rem;color:var(--muted)}
+footer{border-top:1px solid var(--rule);padding-block:32px 56px;color:var(--muted);font-size:.9rem;line-height:1.6}
+footer h3{color:var(--ink);margin-bottom:6px}
+footer p{max-width:76ch}
+.stack{font:400 .8rem/1.8 var(--mono);color:var(--muted)}
+@media (max-width:780px){
+  section.entry{grid-template-columns:minmax(0,1fr);gap:10px}
+  .rail{padding-top:0}.rail span{display:inline;margin-left:.6ch}
+  .defs>div{grid-template-columns:minmax(0,1fr)}
+}
+</style>
+</head>
+<body>
+<header class="hero gutter"><div class="wrap">
+<p class="eyebrow">Case study · Developer Tools &amp; 3D Web</p>
+<h1>A local 3D office for watching the coding agents on my machine</h1>
+<p class="lede">Between 7 and 11 October 2026 I designed and built <a href="https://github.com/aminurislamarnob/claude-agent-verse">Claude Agent Verse</a>, a local, browser-based 3D office that shows the Claude Code and Google Antigravity sessions running on my machine. Every live session sits at a desk in its project&#x27;s pod, subagents pull up a chair as interns, and each character holds up an amber <code>!</code> paddle when an agent is waiting on me. I wrote <strong>all 19 commits</strong> on <code>develop</code> (10 pair-written with Claude Code) across 13 merged pull requests.</p>
+<dl class="facts"><div><dt>My role</dt><dd>Sole developer, paired with Claude Code</dd></div><div><dt>Repository</dt><dd>1 pnpm monorepo (core, server, web)</dd></div><div><dt>Window</dt><dd>7 to 11 Oct 2026 (Asia/Dhaka)</dd></div><div><dt>Milestone</dt><dd>v1 spec complete (11 of 11 sub-issues closed) + Antigravity room</dd></div><div><dt>Stack</dt><dd>TypeScript, Node 24, React 19, Three.js, React Three Fiber, Drei, ws, Vite, Vitest</dd></div></dl>
+<div class="shots single"><img src="img/home-desktop.jpg" width="1440" height="900" alt="Claude Agent Verse preview mode showing the 3D software studio with 12 Claude Code agents across 7 project pods, 3 interns, 3 agents on break in the lounge and ping-pong zone, room tabs for Claude Code and Antigravity, and the urgency-sorted Agents side panel."></div>
+</div></header>
+<main class="gutter"><div class="wrap">
+<p class="shot-note">The synthetic preview office (<code>?preview=still</code>) built from <code>develop</code> at 1440×900. Captured 8 Nov 2026.</p>
+<section class="entry first"><div class="rail">The days <span>7 to 11 Oct</span></div><div class="col"><h2>What the five days looked like</h2><p>I built the v1 spec on 7 October in 12 commits across 8 merged pull requests (#16 to #23), starting from the pure reducer and ending the day with animated 3D characters at project desks. On 8 October I shipped 6 commits (#24 to #27 plus two direct commits) that redesigned the scene as a software studio with chibi developers, added a ping-pong zone, coffee bar and lounge for idle agents, fixed live status tracking from the session registry, and batched static meshes to cut draw calls nearly in half. The repository was quiet on 9 and 10 October. On 11 October I merged PR #29, giving Google Antigravity agents their own office room.</p><figure><div class="chart"><div class="legend"><span><i style="background:var(--me)"></i>My commits (19)</span><span><i style="background:var(--team)"></i>Team commits (0)</span></div><div class="in"><svg viewBox="0 0 820 276" role="img" aria-label="Commits per day from 2026-10-07 to 2026-10-11: 19 mine and 0 by the team. Busiest day: 2026-10-07."><line class="g-grid" x1="46" y1="236.0" x2="806" y2="236.0"/><text class="g-ax" x="40" y="240.0" text-anchor="end">0</text><line class="g-grid" x1="46" y1="172.0" x2="806" y2="172.0"/><text class="g-ax" x="40" y="176.0" text-anchor="end">5</text><line class="g-grid" x1="46" y1="108.0" x2="806" y2="108.0"/><text class="g-ax" x="40" y="112.0" text-anchor="end">10</text><line class="g-grid" x1="46" y1="44.0" x2="806" y2="44.0"/><text class="g-ax" x="40" y="48.0" text-anchor="end">15</text><g><title>7 Oct: 12 mine, 0 team</title><rect class="c-me" x="65.6" y="82.4" width="123.7" height="153.6"/><text class="g-v" x="127.4" y="76.4" text-anchor="middle">12</text></g><text class="g-m" x="127.4" y="258" text-anchor="middle">7 Oct</text><g><title>8 Oct: 6 mine, 0 team</title><rect class="c-me" x="216.4" y="159.2" width="123.7" height="76.8"/><text class="g-v" x="278.2" y="153.2" text-anchor="middle">6</text></g><text class="g-m" x="278.2" y="258" text-anchor="middle">8 Oct</text><g><title>9 Oct: 0 mine, 0 team</title></g><text class="g-m" x="429.0" y="258" text-anchor="middle">9 Oct</text><g><title>10 Oct: 0 mine, 0 team</title></g><text class="g-m" x="579.8" y="258" text-anchor="middle">10 Oct</text><g><title>11 Oct: 1 mine, 0 team</title><rect class="c-me" x="668.8" y="223.2" width="123.7" height="12.8"/><text class="g-v" x="730.6" y="217.2" text-anchor="middle">1</text></g><text class="g-m" x="730.6" y="258" text-anchor="middle">11 Oct</text><line class="g-base" x1="46" y1="236" x2="806" y2="236"/></svg></div></div><figcaption>Each column is one day of non-merge commits on <code>develop</code> in <code>aminurislamarnob/claude-agent-verse</code> (Asia/Dhaka).</figcaption></figure><div class="totals"><div><b>19 of 19</b><small>commits on develop (10 paired with Claude)</small></div><div><b>13 of 13</b><small>merged pull requests</small></div><div><b>12 of 12</b><small>issues closed (spec #1 + #2–#12)</small></div><div><b>72 of 72</b><small>Vitest unit tests passing</small></div></div></div></section>
+<section class="entry"><div class="rail">The brief <span>7 Oct</span></div><div class="col"><h2>The brief: see every blocked agent on a second monitor</h2><p>I often run 10 to 20 Claude Code sessions at once across different projects, and several spawn their own subagents. Finding out which session finished its turn and which one is blocked on a permission prompt meant cycling through terminal tabs. I wrote the v1 spec in issue #1 around five rules.</p><dl class="defs"><div><dt>Observe-only</dt><dd>v1 never sends input to an agent, approves permissions, or stops processes. It only watches.</dd></div><div><dt>Body language over graphs</dt><dd>A character&#x27;s pose shows its state from across the room: typing while working, hand on chin while thinking, an amber <code>!</code> paddle held up when waiting on me, hands on head on error, and leaning back when idle.</dd></div><div><dt>Localhost and token lockdown</dt><dd>The server binds to <code>127.0.0.1</code>, checks the <code>Origin</code> header on HTTP and WebSocket upgrades, and requires a 16-byte random startup token on the browser WebSocket and a 32-byte token on <code>POST /api/hooks</code>.</dd></div><div><dt>Credentials stay unopened</dt><dd>Adapters read only session registry JSON entries (<code>~/.claude/sessions/*.json</code>), Claude project transcripts, and Antigravity&#x27;s <code>brain/*/.system_generated/logs/transcript.jsonl</code>. Per-session token files and OAuth files in <code>~/.gemini</code> are never opened.</dd></div><div><dt>Defensive adapters</dt><dd>Neither Claude Code&#x27;s transcripts nor Antigravity&#x27;s JSONL steps are a public API. Adapters skip unknown event types and malformed fields without throwing.</dd></div></dl></div></section>
+<section class="entry"><div class="rail">Architecture <span>7 Oct</span></div><div class="col"><h2>One pure reducer between disk tailers and Three.js</h2><p>I split the pnpm monorepo into three packages on Node 24: <code>core</code>, <code>server</code>, and <code>web</code>. Every state rule lives in <code>core</code> inside a pure function <code>reduce(office, domainEvent) → office</code> that does no I/O. The server scans process registries, tails JSONL transcripts, receives hook events, feeds them into <code>reduce</code>, and broadcasts the resulting <code>Office</code> over WebSocket.</p><figure><div class="scroll"><svg viewBox="0 0 1020 300" role="img" aria-label="Architecture of Claude Agent Verse. Local Claude Code registries, transcripts, hooks, and Antigravity brain logs are read by Node 24 server adapters, which emit domain events into the pure state reducer in core. When the reducer returns a new Office, the server coalesces snapshots over 100 milliseconds and broadcasts them over an Origin-checked, token-guarded WebSocket to the React Three Fiber 3D office in the browser." xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="ah" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="d-m" d="M0 0L8 4L0 8z"/></marker>
+    <marker id="aa" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="d-ma" d="M0 0L8 4L0 8z"/></marker>
+  </defs>
+
+  <rect class="d-zone" x="20" y="24" width="250" height="252" rx="8"/>
+  <text class="d-z" x="36" y="46">Local machine · ~/.claude &amp; ~/.gemini</text>
+
+  <rect class="d-box" x="38" y="64" width="214" height="54" rx="6"/>
+  <text class="d-t" x="145" y="88" text-anchor="middle">Claude Code</text>
+  <text class="d-s" x="145" y="106" text-anchor="middle">sessions/*.json &amp; *.jsonl</text>
+
+  <rect class="d-box" x="38" y="132" width="214" height="54" rx="6"/>
+  <text class="d-t" x="145" y="156" text-anchor="middle">Antigravity</text>
+  <text class="d-s" x="145" y="174" text-anchor="middle">brain/*/transcript.jsonl</text>
+
+  <rect class="d-box" x="38" y="200" width="214" height="54" rx="6"/>
+  <text class="d-t" x="145" y="224" text-anchor="middle">Hook Forwarder</text>
+  <text class="d-s" x="145" y="242" text-anchor="middle">POST /api/hooks (Bearer)</text>
+
+  <line class="d-l" x1="252" y1="91" x2="314" y2="91" marker-end="url(#ah)"/>
+  <line class="d-l" x1="252" y1="159" x2="314" y2="159" marker-end="url(#ah)"/>
+  <line class="d-l" x1="252" y1="227" x2="314" y2="227" marker-end="url(#ah)"/>
+
+  <rect class="d-zone" x="300" y="24" width="320" height="252" rx="8"/>
+  <text class="d-z" x="316" y="46">Node 24 · packages/server &amp; packages/core</text>
+
+  <rect class="d-box" x="320" y="64" width="280" height="54" rx="6"/>
+  <text class="d-t" x="460" y="88" text-anchor="middle">Scanners &amp; FileTailer</text>
+  <text class="d-s" x="460" y="106" text-anchor="middle">stat &amp; JSONL tail · skips unknown</text>
+
+  <rect class="d-check" x="320" y="132" width="280" height="54" rx="6"/>
+  <text class="d-t" x="460" y="156" text-anchor="middle">Pure Reducer (core)</text>
+  <text class="d-s" x="460" y="174" text-anchor="middle">(office, event) → office · zero I/O</text>
+
+  <rect class="d-box" x="320" y="200" width="280" height="54" rx="6"/>
+  <text class="d-t" x="460" y="224" text-anchor="middle">WebSocket Broadcaster</text>
+  <text class="d-s" x="460" y="242" text-anchor="middle">100 ms coalesce · 127.0.0.1 only</text>
+
+  <line class="d-l" x1="460" y1="118" x2="460" y2="129" marker-end="url(#ah)"/>
+  <line class="d-l" x1="460" y1="186" x2="460" y2="197" marker-end="url(#ah)"/>
+
+  <line class="d-a" x1="600" y1="227" x2="734" y2="227" marker-end="url(#aa)"/>
+  <text class="d-at" x="668" y="217" text-anchor="middle">ws://?token=…</text>
+
+  <rect class="d-zone" x="720" y="24" width="280" height="252" rx="8"/>
+  <text class="d-z" x="736" y="46">Browser · packages/web (R3F)</text>
+
+  <rect class="d-box" x="740" y="64" width="240" height="54" rx="6"/>
+  <text class="d-t" x="860" y="88" text-anchor="middle">3D Rooms &amp; StaticBatch</text>
+  <text class="d-s" x="860" y="106" text-anchor="middle">merged meshes per material</text>
+
+  <rect class="d-box" x="740" y="132" width="240" height="54" rx="6"/>
+  <text class="d-t" x="860" y="156" text-anchor="middle">Chibi Characters &amp; Breaks</text>
+  <text class="d-s" x="860" y="174" text-anchor="middle">pose by state · 5 min break</text>
+
+  <rect class="d-box" x="740" y="200" width="240" height="54" rx="6"/>
+  <text class="d-t" x="860" y="224" text-anchor="middle">Top Bar, Tabs &amp; Inspector</text>
+  <text class="d-s" x="860" y="242" text-anchor="middle">click to focus &amp; live feed</text>
+
+  <line class="d-l" x1="860" y1="200" x2="860" y2="189" marker-end="url(#ah)"/>
+  <line class="d-l" x1="860" y1="132" x2="860" y2="121" marker-end="url(#ah)"/>
+</svg>
+</div><figcaption>Every adapter emits domain events into <code>reduce(office, event) → office</code>; the server coalesces changed offices to one WebSocket broadcast per 100 ms.</figcaption></figure><p>Keeping <code>core</code> pure gave me a single test seam. All 44 reducer tests feed synthetic registry and transcript events through <code>reduce</code> and assert on the returned <code>Office</code>, while the 3D scene is checked visually through replay mode (<code>pnpm --filter @claude-agent-verse/server replay</code>) and preview mode (<code>?preview=still</code>).</p></div></section>
+<section class="entry"><div class="rail">Day one <span>7 Oct</span></div><div class="col"><h2>Day one: 11 sub-issues from debug list to animated 3D office</h2><p>I broke the v1 spec (#1) into 11 vertical sub-issues (#2 through #12) with explicit blocked-by links and worked through them in dependency order on 7 October. Issues #2, #3, and #4 were stacked and squash-merged together with #5 in PR #16 (<code>331dd49</code>), followed by PRs #17 through #23.</p><pre><span class="t">11:21</span>Initial repository commit, README, AGENTS.md and CLAUDE.md
+<span class="t">12:42</span>PR #16 (closes #2–#5): monorepo, Origin + startup token auth, transcript states, subagents as interns
+<span class="t">12:47</span>PR #17 (closes #6): deterministic replay mode (<code>pnpm replay --fixture fixtures/basic</code>)
+<span class="t">12:53</span>PR #18 (closes #7): passive 15 s waiting-on-you inference, <code>(N)</code> tab title and favicon badge
+<span class="t">13:01</span>PR #19 (closes #8): hook forwarder and <code>POST /api/hooks</code> receiver with discovery file
+<span class="t">13:08</span>PR #20 (closes #9): <code>install-hooks</code> and <code>uninstall-hooks</code> CLI that preserves other tools&#x27; hooks
+<span class="t">13:14</span>PR #21 (closes #10): React Three Fiber open-plan office and project desk pods
+<span class="t">13:17</span>PR #22 (closes #11): click-to-focus camera target and slide-out session inspector
+<span class="t">16:14</span>PR #23 (closes #12): 3D characters, desk props, and per-state animations (completes v1)</pre><figure><div class="scroll"><svg viewBox="0 0 940 380" role="img" aria-label="Sequence of waiting-on-you detection. Without hooks, an open tool call that receives no tool_result after 15 seconds is promoted to waiting_on_user on the next tick. With the hook forwarder installed, a PermissionRequest event posts to /api/hooks and flips the session to waiting_on_user immediately, even if the tool_use transcript line arrives afterward." xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="sh" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto"><path class="d-m" d="M0 0L8 4L0 8z"/></marker>
+    <marker id="sa" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="d-ma" d="M0 0L8 4L0 8z"/></marker>
+  </defs>
+
+  <line class="d-life" x1="110" y1="56" x2="110" y2="360"/>
+  <line class="d-life" x1="360" y1="56" x2="360" y2="360"/>
+  <line class="d-life" x1="610" y1="56" x2="610" y2="360"/>
+  <line class="d-life" x1="830" y1="56" x2="830" y2="360"/>
+
+  <rect class="d-box" x="35" y="20" width="150" height="36" rx="6"/><text class="d-t" x="110" y="43" text-anchor="middle">Claude Session</text>
+  <rect class="d-box" x="285" y="20" width="150" height="36" rx="6"/><text class="d-t" x="360" y="43" text-anchor="middle">Hook / Tailer</text>
+  <rect class="d-box" x="535" y="20" width="150" height="36" rx="6"/><text class="d-t" x="610" y="43" text-anchor="middle">Core Reducer</text>
+  <rect class="d-box" x="755" y="20" width="150" height="36" rx="6"/><text class="d-t" x="830" y="43" text-anchor="middle">3D Office &amp; Tab</text>
+
+  <line class="d-l" x1="110" y1="94" x2="354" y2="94" marker-end="url(#sh)"/>
+  <text class="d-t" x="235" y="86" text-anchor="middle">assistant tool_use written to .jsonl</text>
+
+  <line class="d-l" x1="360" y1="134" x2="604" y2="134" marker-end="url(#sh)"/>
+  <text class="d-t" x="485" y="126" text-anchor="middle">transcript_line → state = working</text>
+
+  <line class="d-a" x1="110" y1="182" x2="604" y2="182" marker-end="url(#sa)"/>
+  <text class="d-at" x="357" y="172" text-anchor="middle">Exact path: PermissionRequest hook → POST /api/hooks (instant)</text>
+
+  <line class="d-l d-dash" x1="360" y1="226" x2="604" y2="226" marker-end="url(#sh)"/>
+  <text class="d-t" x="485" y="218" text-anchor="middle">Passive path: tick after 15 s without tool_result</text>
+
+  <rect class="d-check" x="470" y="250" width="280" height="48" rx="6"/>
+  <text class="d-t" x="610" y="271" text-anchor="middle">state = waiting_on_user</text>
+  <text class="d-s" x="610" y="288" text-anchor="middle">hookWaiting blocks late tool_use overwrite</text>
+
+  <line class="d-a" x1="610" y1="328" x2="824" y2="328" marker-end="url(#sa)"/>
+  <text class="d-at" x="717" y="318" text-anchor="middle">Amber &quot;!&quot; paddle + (N) tab badge</text>
+</svg>
+</div><figcaption>Hooks flip a session to <code>waiting_on_user</code> immediately and set <code>hookWaiting</code>, so a tool_use transcript line arriving afterward cannot overwrite it.</figcaption></figure></div></section>
+<section class="entry"><div class="rail">Studio &amp; breaks <span>8 Oct</span></div><div class="col"><h2>Chibi developers, break zones, and real registry paths</h2><p>On 8 October I replaced the first-pass diorama with a single open-plan software studio in PR #24 (<code>615adc3</code>). Each session gets a deterministic chibi developer from its session ID (skin tone, hair, hoodie, glasses, headphones), while about one developer in five wears a white taqiyah prayer cap, thobe, and Sunnah beard (<code>5f7a66a</code>). Interns wear team-coloured beanies. I also replaced <code>drei</code> Html labels with a fixed overlay portal after finding that labels mounted before the canvas connected rendered empty, and removed ~4 MB of unused GLB files.</p><p>In PR #25 (<code>2d6d5b7</code>) and PR #26 (<code>259fe77</code>) I added a 5-minute break threshold (<code>breakThresholdMs</code>). When a session stays idle for five minutes, its character stands up, walks down the pod aisle to the ping-pong table, coffee bar, sofa, or reshaped bean bags (12 spots total), and runs back to its desk as soon as new transcript activity arrives.</p><div class="tbl"><table><thead><tr><th>State or event</th><th>Reducer rule in packages/core</th><th>What you see in the 3D room</th></tr></thead><tbody><tr><td>Working (<code>tool_use</code>)</td><td><code>state = working</code>, records <code>currentTool</code> and <code>toolStartedAt</code></td><td>Typing at the mechanical keyboard, code scrolling on the display, tool pill above head</td></tr><tr><td>Thinking (<code>user</code> / <code>tool_result</code>)</td><td><code>state = thinking</code>, clears <code>currentTool</code></td><td>Hand to chin, eyes up, animated thought bubble</td></tr><tr><td>Waiting on you</td><td>Hook <code>PermissionRequest</code> / <code>Notification</code>, or 15 s <code>tick</code> with open tool</td><td>Surprised face, amber <code>!</code> paddle billboarded to camera, pulsing floor ring, <code>(N)</code> tab title</td></tr><tr><td>Error (<code>is_error</code> / <code>ERROR_MESSAGE</code>)</td><td><code>state = error</code>, records error excerpt in 20-item feed</td><td>Hands on head, worried brows, sweat drop, red <code>!</code> badge</td></tr><tr><td>Idle (<code>assistant</code> text / registry idle)</td><td><code>state = idle</code>, sets <code>lastActivityAt</code></td><td>Leaning back with arms behind head and closed happy eyes</td></tr><tr><td>On break (idle ≥ 5 min)</td><td><code>onBreak = true</code> on <code>tick</code>; any activity resets <code>onBreak = false</code></td><td>Walks to ping-pong rally, coffee bar mug, lounge sofa, or bean bag; runs back on work</td></tr></tbody></table></div><p>Watching my own live sessions exposed two bugs that I fixed in PR #27 (<code>ff05778</code>). First, a session whose last transcript line was a tool call stayed stuck in <code>working</code> or <code>waiting_on_user</code> after its turn ended; I added a <code>session_status</code> event carrying the registry&#x27;s own <code>busy</code>/<code>idle</code> flag so <code>idle</code> wins unless a permission hook is open. Second, project paths containing a dot (such as <code>.claude</code> or <code>acme.app</code>) missed their transcripts because Claude Code turns every non-alphanumeric character into <code>-</code> in the project slug.</p></div></section>
+<section class="entry"><div class="rail">Speed <span>8 Oct</span></div><div class="col"><h2>Speed: cutting draw calls by 47% and shadow draws by 82%</h2><p>With 19 live sessions open at 3200×2000, the scene issued 4,596 draw calls per frame and re-rendered the shadow map on every frame because the server broadcast a fresh copy of <code>Office</code> on every one-second tick even when nothing changed.</p><figure><div class="ranges"><div class="legend" style="margin:0"><span><i style="background:var(--before)"></i>Before</span><span><i style="background:var(--me)"></i>After</span></div><div><div class="row-h">Total draw calls per frame<span>4,596 → 2,432 calls</span></div><div class="track"><div class="bar b" title="Before: 4596–4596  calls" style="left:95.75%;width:0.00%"></div><div class="bar a" title="After: 2432–2432  calls" style="left:50.67%;width:0.00%"></div></div></div><div><div class="row-h">Shadow-pass draw calls<span>1,600 → 289 calls</span></div><div class="track"><div class="bar b" title="Before: 1600–1600  calls" style="left:33.33%;width:0.00%"></div><div class="bar a" title="After: 289–289  calls" style="left:6.02%;width:0.00%"></div></div></div><div class="axis"><span>0  calls</span><span>1200  calls</span><span>2400  calls</span><span>3600  calls</span><span>4800  calls</span></div></div><figcaption>Measured on a live office of 19 sessions at 3200×2000, 30 fps (commit <code>e609945</code>). CPU frame time dropped from 12.6 ms to 8.4 ms; GPU time was unchanged (fill-bound at 3200×2000).</figcaption></figure><p>In commit <code>e609945</code> I made two changes. On the server, <code>dispatch</code> compares the reducer&#x27;s return reference (<code>if (office !== before)</code>) and coalesces broadcasts to at most one snapshot per 100 ms. In <code>packages/web</code>, I built <code>StaticBatch</code>, which merges all static meshes under a desk or room into one <code>BufferGeometry</code> per material key while letting animated parts (<code>userData.live</code>: screens, mug steam, arcade display, ping-pong ball) stay separate. CPU time per frame fell from 12.6 ms to 8.4 ms.</p></div></section>
+<section class="entry"><div class="rail">Antigravity <span>11 Oct</span></div><div class="col"><h2>A second room for Google Antigravity agents</h2><p>On 11 October I merged PR #29 (<code>249e1c4</code>) to watch Google Antigravity conversations alongside Claude Code. Each agent kind gets its own room, switched from tabs in the top bar that show per-room agent and waiting counts while the browser tab title totals every room.</p><dl class="defs"><div><dt>Passive brain tailing</dt><dd>Antigravity has no process registry, so <code>packages/server/src/antigravity.ts</code> lists <code>~/.gemini/{antigravity,antigravity-ide,antigravity-cli}/brain/*</code> and treats a conversation as live while its <code>transcript.jsonl</code> was modified in the last 30 minutes, assigning a synthetic negative PID.</dd></div><div><dt>Stat-only workspace resolution</dt><dd>Once a tool call in <code>transcript.jsonl</code> names a path outside <code>~/.gemini</code>, <code>workspaceDir</code> checks the path on disk with <code>stat</code> (so a <code>Makefile</code> or <code>.env</code> resolves to its parent folder and a directory named <code>acme.app</code> is kept) and moves the agent into its project pod.</dd></div><div><dt>Shared state reducer</dt><dd><code>processAntigravityStep</code> maps <code>USER_INPUT</code>, <code>PLANNER_RESPONSE</code>, <code>GENERIC</code>, and <code>ERROR_MESSAGE</code> into the same <code>AgentState</code> values, so passive 15 s waiting inference and 5-minute breaks work without special cases.</dd></div></dl></div></section>
+<section class="entry"><div class="rail">Under the hood</div><div class="col"><h2>The details a visitor never sees</h2><dl class="defs"><div><dt>Loopback, Origin, and two tokens</dt><dd>HTTP and WebSocket requests from foreign <code>Origin</code> headers get <code>403 Forbidden</code>. Browser WebSockets must pass <code>?token=&lt;browserToken&gt;</code> (16 random bytes per start); hook forwarders authenticate with <code>Bearer &lt;hookToken&gt;</code> (32 random bytes stored in <code>~/.claude/agent-verse-discovery.json</code> with mode <code>0600</code> and unlinked on exit).</dd></div><div><dt>Coexisting hook installer</dt><dd><code>updateHooks</code> tags only its own forwarder entry (<code># claude-agent-verse</code>) across the 10 Claude hook events (<code>SessionStart</code> through <code>SubagentStop</code>), leaving hooks from Orca, Agent Flow, or Superset untouched and backing up <code>.claude.json</code> to <code>.claude.json.bak</code> before writing.</dd></div><div><dt>5-file Vitest suite (72 tests)</dt><dd>44 reducer tests in <code>packages/core/src/reducer.test.ts</code>, 11 Antigravity scanner/workspace tests, 9 Origin and token auth tests, 6 hook installer tests, and 2 registry scanner tests run in ~160 ms.</dd></div></dl></div></section>
+<section class="entry"><div class="rail">How I worked</div><div class="col"><h2>Dogfooding with Claude Code on a live test subject</h2><p>Because Claude Agent Verse observes Claude Code, every session I used to build the repo sat live inside the office while I worked. I wrote <code>AGENTS.md</code> and <code>CLAUDE.md</code> up front so each sub-issue followed the same loop: pick the lowest-numbered unblocked ticket, write failing Vitest reducer tests first, make them pass, and check the 3D scene in replay or preview mode.</p><div class="split"><div><h3><i style="background:var(--me)"></i>What I specified and drove</h3><ul class="tight"><li>The v1 problem statement, domain model, and 11 tracer-bullet issues (#1–#12)</li><li>Security boundaries: loopback bind, Origin check, startup tokens, and credential guardrails in <code>~/.claude</code> and <code>~/.gemini</code></li><li>The studio redesign brief, chibi body-language table, traditional attire (<code>5f7a66a</code>), and break-zone mechanics (#24–#26)</li><li>Live debugging against 17–19 concurrent sessions (#27) and the <code>StaticBatch</code> + snapshot coalescing profiling (<code>e609945</code>)</li><li>The multi-room Antigravity design and stat-only workspace resolution (#29)</li></ul></div><div><h3><i style="background:var(--team)"></i>How I used Claude Code (10 co-authored commits)</h3><ul class="tight"><li>Writing red-first Vitest reducer and adapter tests for each ticket before implementation</li><li>Building procedural Three.js character, furniture, and break-zone geometry in <code>packages/web</code></li><li>Implementing the <code>StaticBatch</code> geometry merger and <code>processAntigravityStep</code> reducer cases</li><li>Running headless Chromium verification against <code>?preview=still</code> and <code>pnpm replay</code></li></ul></div></div></div></section>
+<section class="entry"><div class="rail">Where it stands <span>11 Oct</span></div><div class="col"><h2>Where it stands</h2><ul class="tight"><li>**v1 complete on <code>develop</code>:** All 11 sub-issues of spec #1 are closed, with 72 passing unit tests across <code>core</code> and <code>server</code>.</li><li><strong>Two agent rooms:</strong> Live observation for both Claude Code (registry + transcripts + optional real-time hooks) and Google Antigravity (<code>~/.gemini/*/brain/*/transcript.jsonl</code>).</li><li><strong>Two-minute visual review without a server:</strong> Appending <code>&amp;preview</code> or <code>&amp;preview=still</code> to the URL renders a synthetic 17-agent office across both rooms in the browser.</li><li><strong>Two open exploratory PRs:</strong> Feature-animation chibi restyling (#28) and daylight + keyboard/minimap walk navigation (#30) sit on feature branches for the next iteration.</li></ul></div></section>
+</div></main>
+<footer class="gutter"><div class="wrap">
+<h3>Where the numbers come from</h3>
+<p>Commit counts (19 of 19, 10 with a <code>Co-Authored-By: Claude</code> trailer) are non-merge commits on <code>develop</code> in <code>aminurislamarnob/claude-agent-verse</code> from 7 to 11 October 2026 in <code>Asia/Dhaka</code>, counted with <code>git_stats.py</code>. Pull request (13 merged) and issue counts (12 closed) come from GitHub via <code>gh</code>. Three early PRs (#13, #14, #15 for issues #2, #3, #4) were stacked and squash-merged inside PR #16 (<code>331dd49</code>). Two open feature-branch PRs (#28 and #30) are not on <code>develop</code> and are excluded from the totals. Frame-cost numbers (draw calls 4,596 → 2,432, shadow-pass draws 1,600 → 289, CPU 12.6 ms → 8.4 ms, GPU unchanged) were measured on a live office of 19 sessions at 3200×2000, 30 fps and recorded in commit <code>e609945</code>. Commit counts measure activity, not effort; squash merges combine multiple branch commits into one.</p>
+<p class="stack" style="margin-top:14px">TypeScript 5.9 · Node.js 24 · React 19 · Three.js · React Three Fiber · Drei · @react-spring/three · ws · Vite · Vitest</p>
+<p style="margin-top:14px">Md Aminur Islam (aminurislamarnob).</p>
+</div></footer>
+</body>
+</html>

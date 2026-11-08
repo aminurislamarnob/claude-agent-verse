@@ -1,0 +1,72 @@
+{
+  "generated": "2026-11-08",
+  "authors": [
+    "eng.aminurislam@gmail.com",
+    "Md Aminur Islam",
+    "Md. Aminur Islam"
+  ],
+  "repos": [
+    {
+      "name": "claude-agent-verse",
+      "path": ".",
+      "ref": "develop",
+      "commits": 19,
+      "mine": 19,
+      "team": 0,
+      "first_commit": "2026-10-07 11:21",
+      "my_first_commit": "2026-10-07 11:21",
+      "my_last_commit": "2026-10-11 16:31",
+      "team_authors": [],
+      "mine_coauthored": 10,
+      "github": {
+        "slug": "aminurislamarnob/claude-agent-verse",
+        "merged_prs": 13,
+        "my_merged_prs": 13,
+        "issues": 12,
+        "my_issues": 12
+      }
+    }
+  ],
+  "totals": {
+    "commits": 19,
+    "mine": 19,
+    "team": 0,
+    "mine_coauthored": 10,
+    "merged_prs": 13,
+    "my_merged_prs": 13,
+    "issues": 12,
+    "my_issues": 12
+  },
+  "series": {
+    "granularity": "day",
+    "first": "2026-10-07",
+    "last": "2026-10-11",
+    "rows": [
+      {
+        "start": "2026-10-07",
+        "me": 12,
+        "team": 0
+      },
+      {
+        "start": "2026-10-08",
+        "me": 6,
+        "team": 0
+      },
+      {
+        "start": "2026-10-09",
+        "me": 0,
+        "team": 0
+      },
+      {
+        "start": "2026-10-10",
+        "me": 0,
+        "team": 0
+      },
+      {
+        "start": "2026-10-11",
+        "me": 1,
+        "team": 0
+      }
+    ]
+  }
+}
